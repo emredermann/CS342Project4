@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include "simplefs.h"
-
+#define BLOCKSIZE 4
 
 // Global Variables =======================================
 int vdisk_fd; // Global virtual disk file descriptor. Global within the library.
@@ -29,8 +29,8 @@ int read_block (void *block, int k)
     lseek(vdisk_fd, (off_t) offset, SEEK_SET);
     n = read (vdisk_fd, block, BLOCKSIZE);
     if (n != BLOCKSIZE) {
-	printf ("read error\n");
-	return -1;
+        printf ("read error\n");
+        return -1;
     }
     return (0); 
 }
@@ -45,8 +45,8 @@ int write_block (void *block, int k)
     lseek(vdisk_fd, (off_t) offset, SEEK_SET);
     n = write (vdisk_fd, block, BLOCKSIZE);
     if (n != BLOCKSIZE) {
-	printf ("write error\n");
-	return (-1);
+	    printf ("write error\n");
+	    return (-1);
     }
     return 0; 
 }
