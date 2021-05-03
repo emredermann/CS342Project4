@@ -15,24 +15,23 @@
 struct inode
 {
     int FileMode;
-    int ownerID;
-    int groupID;
+    int data_block_number;
+    int ID;
     int FCBtable[16];
 };
 
-struct block
-{
-    /* data */
-};
 
 struct directoryEntry
 {
     char fileName[FILENAME];
-    int iNode;
+    int iNodeNo;
     int DirectoryEntryLength;
 };
 
-
+struct block
+{
+    struct directoryEntry directoryEntrys [32];
+};
 
 // Global Variables =======================================
 int vdisk_fd; // Global virtual disk file descriptor. Global within the library.
