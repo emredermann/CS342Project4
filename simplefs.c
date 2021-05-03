@@ -7,6 +7,32 @@
 #include <fcntl.h>
 #include "simplefs.h"
 #define BLOCKSIZE 4
+#define FILENAME 110
+
+
+
+
+struct inode
+{
+    int FileMode;
+    int ownerID;
+    int groupID;
+    int FCBtable[16];
+};
+
+struct block
+{
+    /* data */
+};
+
+struct directoryEntry
+{
+    char fileName[FILENAME];
+    int iNode;
+    int DirectoryEntryLength;
+};
+
+
 
 // Global Variables =======================================
 int vdisk_fd; // Global virtual disk file descriptor. Global within the library.
