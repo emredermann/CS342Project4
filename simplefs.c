@@ -7,30 +7,40 @@
 #include <fcntl.h>
 #include "simplefs.h"
 #define BLOCKSIZE 4
-#define FILENAME 110
+#define FILENAMESIZE 110
 
 
 
 
 struct inode
 {
-    int FileMode;
-    int data_block_number;
-    int ID;
-    int FCBtable[16];
-};
+    int size;
+    int nodeID;
+    int dataBlockNumber;
+    int pointersToBlocks[];
 
+};
+struct block
+{
+    struct directoryEntry entryList[32];
+};
 
 struct directoryEntry
 {
-    char fileName[FILENAME];
+    char fileName[FILENAMESIZE];
     int iNodeNo;
-    int DirectoryEntryLength;
 };
 
-struct block
+struct superBlock
 {
-    struct directoryEntry directoryEntrys [32];
+    int iNodeCount;
+    int blocksCount;
+    int reservedBlocksCount;
+    int freeBlockCount;
+    int freeiNodeCount;
+    int firstDataBlock;
+    int blockSize;
+    int blocksPerGroup;   
 };
 
 // Global Variables =======================================
@@ -40,6 +50,11 @@ int vdisk_fd; // Global virtual disk file descriptor. Global within the library.
               // Applications will not use  this directly. 
 // ========================================================
 
+struct superBlock super_block;
+
+int get_vdisk_fd(){
+    return vdisk_fd;
+}
 
 // read block k from disk (virtual disk) into buffer block.
 // size of the block is BLOCKSIZE.
@@ -81,6 +96,10 @@ int write_block (void *block, int k)
    The following functions are to be called by applications directly. 
 ***********************************************************************/
 
+void superBlock_init(){
+    super_block.blocksCount = ;
+}
+
 // this function is partially implemented.
 int create_format_vdisk (char *vdiskname, unsigned int m)
 {
@@ -95,7 +114,7 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
              vdiskname, BLOCKSIZE, count);
     //printf ("executing command = %s\n", command);
     system (command);
-
+    
     // now write the code to format the disk below.
     // .. your code...
     
