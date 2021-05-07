@@ -6,42 +6,10 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include "simplefs.h"
-#define BLOCKSIZE 4
-#define FILENAMESIZE 110
 
 
 
 
-struct inode
-{
-    int size;
-    int nodeID;
-    int dataBlockNumber;
-    int pointersToBlocks[];
-
-};
-struct block
-{
-    struct directoryEntry entryList[32];
-};
-
-struct directoryEntry
-{
-    char fileName[FILENAMESIZE];
-    int iNodeNo;
-};
-
-struct superBlock
-{
-    int iNodeCount;
-    int blocksCount;
-    int reservedBlocksCount;
-    int freeBlockCount;
-    int freeiNodeCount;
-    int firstDataBlock;
-    int blockSize;
-    int blocksPerGroup;   
-};
 
 // Global Variables =======================================
 int vdisk_fd; // Global virtual disk file descriptor. Global within the library.
@@ -50,7 +18,6 @@ int vdisk_fd; // Global virtual disk file descriptor. Global within the library.
               // Applications will not use  this directly. 
 // ========================================================
 
-struct superBlock super_block;
 
 int get_vdisk_fd(){
     return vdisk_fd;
@@ -96,9 +63,6 @@ int write_block (void *block, int k)
    The following functions are to be called by applications directly. 
 ***********************************************************************/
 
-void superBlock_init(){
-    super_block.blocksCount = ;
-}
 
 // this function is partially implemented.
 int create_format_vdisk (char *vdiskname, unsigned int m)
@@ -118,6 +82,23 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     // now write the code to format the disk below.
     // .. your code...
     
+
+
+    sfs_mount(vdiskname);
+    struct superBlock * superBlock_ptr = (struct superBlock *) malloc(sizeof(struct superBlock));
+    superBlock_ptr-> blocksCount = size / BLOCKSIZE;
+    for (int i = 0; i < MAX_FILE_SIZE; ++i)
+    {
+        superBlock_ptr->freeFCB[i] = 0;
+    }
+    write_block(superBlock_ptr,0);
+    free(superBlock_ptr);
+   
+   /* initfatBlock
+    inti dir block
+    free fat blcok pointer
+    */
+    sfs_umount();
     return (0); 
 }
 
