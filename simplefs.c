@@ -7,9 +7,61 @@
 #include <fcntl.h>
 #include "simplefs.h"
 
+#define BITMAP_BLOCK_NO 4
+#define BLOCKSIZE 4096 // bytes
+#define FILENAMESIZE 110
+#define ENTRY_PER_BLOCK 32
+#define MAXFILES 32
+#define ENTRYBLOCKS 4
+#define MAX_FILE_SIZE 128
+#define ROOT_BLOCKS 4
+struct inode
+{
+    int nodeID;
+   // int dataBlockNumber;
+    int dataBlockNumbers[];
+
+};
+struct directoryblock
+{
+    struct directoryEntry entryList[ENTRY_PER_BLOCK];
+};
+//The size of the directory Entry declared as 128 in the assingment.
+struct directoryEntry
+{
+    char fileName[FILENAMESIZE];
+    int iNodeNo;
+    char filler [128 - sizeof(int) -FILENAMESIZE];
+
+};
+struct bitmap_block{
+    int bitmap[4];
+
+};
+struct FCB_block{
+    struct inode inodes[32];
+};
+
+struct superBlock
+{
+    int iNodeCount;
+    int blocksCount;
+    int reservedBlocksCount;
+    int freeFileBlockCount[MAX_FILE_SIZE];
+    int freeiNodeCount;
+    int firstDataBlock;
+    int blockSize;
+   // int blocksPerGroup;   
+    struct directoryEntry dir_Entry [MAX_FILE_SIZE];
+    int freeFCB[MAX_FILE_SIZE];
+};
+
+struct superBlock super_block;
+struct block block;
+struct directoryEntry dir_Entry;
 
 
-
+void inode_init(){}
 
 // Global Variables =======================================
 int vdisk_fd; // Global virtual disk file descriptor. Global within the library.
@@ -93,11 +145,10 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     }
     write_block(superBlock_ptr,0);
     free(superBlock_ptr);
-   
-   /* initfatBlock
-    inti dir block
-    free fat blcok pointer
-    */
+
+    bitmap_block_init();
+    directory_entry_block_init();
+    fcb_block_init();
     sfs_umount();
     return (0); 
 }
@@ -158,3 +209,59 @@ int sfs_delete(char *filename)
     return (0); 
 }
 
+void bitmap_block_init(){
+    struct bitmap_block * current_bitmap_block;
+    current_bitmap_block = (struct bitmap_block *) malloc ( sizeof ( struct bitmap_block ) );
+    
+    for (int i = 0; i < BLOCKSIZE / sizeof(struct bitmap_block); i++)
+    {
+        for (int j = 0; j < 4; j++)
+        {
+            // Which 0 means free space.
+            current_bitmap_block->bitmap[j] = 0;
+        }
+        
+    }
+    for (int i = 0; i < BITMAP_BLOCK_NO-1; i++)
+    {
+        // Since the root directories are from 5 to 9 (not included.)
+        write_block(current_bitmap_block,i+1);
+    }
+    free(current_bitmap_block);   
+
+}
+
+
+void fcb_block_init(){
+    struct FCB_block * current_fcb_block;
+    current_fcb_block=  (struct FCB_block *) malloc ( sizeof ( struct FCB_block ) );
+    for (int i = 0; i < BLOCKSIZE / sizeof(struct directoryEntry); i++)
+    {
+        // FCB initializaiton hakkında soru işaretleri maili bekle.
+    }
+    for (int i = 0; i < ROOT_BLOCKS; i++)
+    {
+        // Since the root directories are from 5 to 9 (not included.)
+        write_block(current_fcb_block,i+5);
+    }
+    free(current_fcb_block);   
+}
+
+
+void directory_entry_block_init(){
+    struct directoryblock * current_entry_block;
+    current_entry_block = (struct directoryblock *) malloc ( sizeof ( struct directoryblock ) );
+    //the blocks 5,6,7,8 contains the root directory
+    for (int i = 0; i < BLOCKSIZE / sizeof(struct directoryEntry); i++)
+    {
+        current_entry_block->entryList[i].fileName[0] = '\0';
+        current_entry_block->entryList[i].iNodeNo = 0;
+    }
+    for (int i = 0; i < ROOT_BLOCKS; i++)
+    {
+        // Since the root directories are from 5 to 9 (not included.)
+        write_block(current_entry_block,i+5);
+    }
+    free(current_entry_block);   
+    
+}
