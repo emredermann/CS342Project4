@@ -14,15 +14,20 @@
 #define MAXFILES 32
 #define ENTRYBLOCKS 4
 #define MAX_FILE_SIZE 128
+#define FCB_SIZE 128
 #define ROOT_BLOCK_SIZE 4
 
-
+struct directoryblock;
+//contains the pointers to all blocks occupied by the file.
 struct inode
 {
+    /*
     int nodeID;
     int userID;
     int groupID;
     int *dataBlockNumbers;
+*/
+    int usedStatus;
 };
 
 struct directoryblock
@@ -30,6 +35,7 @@ struct directoryblock
     struct directoryEntry entryList[ENTRY_PER_BLOCK];
 };
 //The size of the directory Entry declared as 128 in the assingment.
+// Contains the address of the index block(inode)
 struct directoryEntry
 {
     char fileName[FILENAMESIZE];
@@ -217,7 +223,7 @@ int sfs_create(char *filename)
             // Bitmap location calculation ?? i * 
             //if(spr_ptr->freeFCB[i*32+j])}
             
-        if(spr_ptr->freeFCB[i*32+j] == 1 && strcmp(filename, directoryBlock_ptr->entryList[j].name) == 0)
+        if((spr_ptr->freeFCB[i*32+j] == 1) && (strcmp(filename, directoryBlock_ptr -> entryList[j].name) == 0))
             {
                 printf("File already exist.");
                 return -1;
