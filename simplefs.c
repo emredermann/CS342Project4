@@ -15,13 +15,15 @@
 #define ENTRYBLOCKS 4
 #define MAX_FILE_SIZE 128
 #define ROOT_BLOCKS 4
+
 struct inode
 {
     int nodeID;
-   // int dataBlockNumber;
-    int dataBlockNumbers[];
-
+    int userID;
+    int groupID;
+    int *dataBlockNumbers;
 };
+
 struct directoryblock
 {
     struct directoryEntry entryList[ENTRY_PER_BLOCK];
@@ -34,31 +36,24 @@ struct directoryEntry
     char filler [128 - sizeof(int) -FILENAMESIZE];
 
 };
+
 struct bitmap_block{
     int bitmap[4];
-
 };
+
 struct FCB_block{
     struct inode inodes[32];
 };
 
 struct superBlock
 {
-    int iNodeCount;
-    int blocksCount;
-    int reservedBlocksCount;
-    int freeFileBlockCount[MAX_FILE_SIZE];
-    int freeiNodeCount;
-    int firstDataBlock;
-    int blockSize;
-   // int blocksPerGroup;   
-    struct directoryEntry dir_Entry [MAX_FILE_SIZE];
+    int blockCount;
+    // int blocksPerGroup;   
     int freeFCB[MAX_FILE_SIZE];
+    int totalNumberOfBlocks;
+
 };
 
-struct superBlock super_block;
-struct block block;
-struct directoryEntry dir_Entry;
 
 
 void inode_init(){}
@@ -133,12 +128,10 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     
     // now write the code to format the disk below.
     // .. your code...
-    
-
 
     sfs_mount(vdiskname);
     struct superBlock * superBlock_ptr = (struct superBlock *) malloc(sizeof(struct superBlock));
-    superBlock_ptr-> blocksCount = size / BLOCKSIZE;
+    superBlock_ptr->blockCount = size / BLOCKSIZE;
     for (int i = 0; i < MAX_FILE_SIZE; ++i)
     {
         superBlock_ptr->freeFCB[i] = 0;
@@ -148,11 +141,10 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
 
     bitmap_block_init();
     directory_entry_block_init();
-    fcb_block_init();
+   // fcb_block_init();
     sfs_umount();
     return (0); 
 }
-
 
 // already implemented
 int sfs_mount (char *vdiskname)
@@ -163,7 +155,6 @@ int sfs_mount (char *vdiskname)
     vdisk_fd = open(vdiskname, O_RDWR); 
     return(0);
 }
-
 
 // already implemented
 int sfs_umount ()
@@ -213,15 +204,12 @@ void bitmap_block_init(){
     struct bitmap_block * current_bitmap_block;
     current_bitmap_block = (struct bitmap_block *) malloc ( sizeof ( struct bitmap_block ) );
     
-    for (int i = 0; i < BLOCKSIZE / sizeof(struct bitmap_block); i++)
-    {
         for (int j = 0; j < 4; j++)
         {
             // Which 0 means free space.
             current_bitmap_block->bitmap[j] = 0;
         }
-        
-    }
+
     for (int i = 0; i < BITMAP_BLOCK_NO-1; i++)
     {
         // Since the root directories are from 5 to 9 (not included.)
@@ -231,7 +219,7 @@ void bitmap_block_init(){
 
 }
 
-
+/*
 void fcb_block_init(){
     struct FCB_block * current_fcb_block;
     current_fcb_block=  (struct FCB_block *) malloc ( sizeof ( struct FCB_block ) );
@@ -239,6 +227,7 @@ void fcb_block_init(){
     {
         // FCB initializaiton hakkında soru işaretleri maili bekle.
     }
+    
     for (int i = 0; i < ROOT_BLOCKS; i++)
     {
         // Since the root directories are from 5 to 9 (not included.)
@@ -246,6 +235,8 @@ void fcb_block_init(){
     }
     free(current_fcb_block);   
 }
+*/
+
 
 
 void directory_entry_block_init(){
@@ -264,4 +255,86 @@ void directory_entry_block_init(){
     }
     free(current_entry_block);   
     
+}
+
+int directory_entry_add(int n, struct directoryEntry * ent){
+    int directoryBlockNumber = n / 32; 
+    int ofset = n-directoryBlockNumber * 32;
+    struct directoryblock * dir_block;
+    dir_block = (struct directoryblock *) malloc(sizeof(struct directoryblock));
+
+    if(read_block(dir_block,directoryBlockNumber+1) != 1){
+        return -1;
+    }
+
+    strcpy(dir_block->entryList[ofset].fileName, ent->fileName);
+    dir_block->entryList[ofset].iNodeNo = ent->iNodeNo;
+
+    // real part 
+    if(write_block(dir_block,directoryBlockNumber+1) != 1){
+        return -1;
+    }
+    
+    return 1;
+}
+
+int directory_entry_finder(char * name, struct directoryEntry * ent ){
+
+    struct superBlock * ptr;
+    ptr = (struct superBlock *) malloc(sizeof(struct superBlock));
+
+    read_block(ptr,0);
+    struct directoryblock * dir_block;
+    dir_block = (struct directoryblock *) malloc(sizeof(struct directoryblock));
+    for (int i = 0; i < 4; i++)
+    {
+        read_block(dir_block,i+5);
+        for(int j = 0;j<32;j++){
+            if(ptr->freeFCB[(i*32)+j] == 1 && (strcmp(name,dir_block->entryList[j].fileName) == 0)){
+                    ent->iNodeNo = dir_block->entryList[j].iNodeNo;
+                    strcpy(ent->fileName,dir_block->entryList[j].fileName); 
+            // Block size / sizeof(struct directory entry) = 32
+                    return (i*32)+j;
+            }
+        }
+    }
+    return -1;
+}
+
+int emptyDirectoryFounder(){
+    struct superBlock * super_ptr;
+    super_ptr = (struct superBlock *)malloc(sizeof(struct superBlock));
+    read_block(super_ptr,0);
+    for(int i = 0;i <MAX_FILE_SIZE;i++){
+        // 0 Means FCB is free
+        if(super_ptr->freeFCB[i] == 0){
+            return i;
+        }
+    }
+}
+
+// Sets the superblocks FCB item.
+int set_superblock_FCB(int location){
+    struct superBlock * super_ptr;
+    super_ptr = (struct superBlock *)malloc(sizeof(struct superBlock));
+    read_block(super_ptr,0);
+    super_ptr->freeFCB[location] = 1;
+    write_block(super_ptr,0);
+}
+
+int directory_entry_getter(int n, struct  directoryEntry * output){
+     int directoryBlockNumber = n / 32; 
+    int ofset = n-directoryBlockNumber * 32;
+    struct directoryblock * dir_block;
+    dir_block = (struct directoryblock *) malloc(sizeof(struct directoryblock));
+
+    if(read_block(dir_block,directoryBlockNumber+1) != 1){
+        return -1;
+    }
+
+    strcpy(dir_block->entryList[ofset].fileName, output->fileName);
+    dir_block->entryList[ofset].iNodeNo = output->iNodeNo;
+    return 1;
+
+
 }
