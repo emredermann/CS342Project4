@@ -187,7 +187,7 @@ int sfs_umount ()
 
 
 
-
+// Done but the bitmap | Superblock conflict occur.
 int sfs_create(char *filename)
 {
     //Target location in FCB
@@ -241,7 +241,6 @@ int sfs_create(char *filename)
 
 
 
-
 // DONE
 int sfs_open(char *file, int mode)
 {
@@ -286,6 +285,7 @@ int sfs_getsize (int  fd)
 }
 
 
+
 int sfs_read(int fd, void *buf, int n){
     return (0); 
 }
@@ -299,6 +299,27 @@ int sfs_delete(char *filename)
 {
     return (0); 
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 void bitmap_block_init(){
     struct bitmap_block * current_bitmap_block;
