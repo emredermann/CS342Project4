@@ -224,6 +224,7 @@ int sfs_create(char *filename)
             }
     }
     }
+    //set_bitmap_block(targetlocation);
     set_superblock_FCB(targetlocation);
     struct directoryEntry * directoryEntry_ptr;
     directoryEntry_ptr = (struct directoryEntry *) malloc (sizeof(struct directoryEntry));
@@ -431,6 +432,16 @@ int set_superblock_FCB(int location){
     super_ptr->freeFCB[location] = 1;
     write_block(super_ptr,0);
 }
+
+
+int set_bitmap_block(int location){
+    struct bitmap_block * super_ptr;
+    super_ptr = (struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+    read_block(super_ptr,0);
+    super_ptr->bitmap[location] = 1;
+    write_block(super_ptr,0);
+}
+
 
 int directory_entry_getter(int n, struct  directoryEntry * output){
      int directoryBlockNumber = n / 32; 
