@@ -14,7 +14,8 @@
 #define MAXFILES 32
 #define ENTRYBLOCKS 4
 #define MAX_FILE_SIZE 128
-#define ROOT_BLOCKS 4
+#define ROOT_BLOCK_SIZE 4
+
 
 struct inode
 {
@@ -33,12 +34,12 @@ struct directoryEntry
 {
     char fileName[FILENAMESIZE];
     int iNodeNo;
+    int size;
     char filler [128 - sizeof(int) -FILENAMESIZE];
-
 };
 
 struct bitmap_block{
-    int bitmap[4];
+    int bitmap[MAX_FILE_SIZE];
 };
 
 struct FCB_block{
@@ -54,6 +55,14 @@ struct superBlock
 
 };
 
+
+//MODE_READ 0
+//MODE_APPEND 1
+int modes[MAX_FILE_SIZE];
+
+int available_location_openFileTable[MAX_FILE_SIZE];
+
+struct directoryEntry open_FileTable[MAX_FILE_SIZE];
 
 
 void inode_init(){}
@@ -140,8 +149,20 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     free(superBlock_ptr);
 
     bitmap_block_init();
+
+    struct bitmap_block * bitmap_ptr = (struct bitmap_block *) malloc(sizeof(struct bitmap_block));
+    read_block(bitmap_ptr,1);
+    for (int i = 0; i < 5; i++)
+    {
+        bitmap_ptr->bitmap[i] = 0;
+    }
+    write_block(bitmap_ptr,1);
+
+
     directory_entry_block_init();
-   // fcb_block_init();
+
+
+    
     sfs_umount();
     return (0); 
 }
@@ -165,30 +186,108 @@ int sfs_umount ()
 }
 
 
+
+
 int sfs_create(char *filename)
 {
+    //Target location in FCB
+    int targetlocation = emptyDirectoryFounder(filename);
+    if(targetlocation == -1){return -1;}
+    
+    /*
+    struct bitmap_block * spr_ptr;
+    spr_ptr = (struct bitmap_block *) malloc (sizeof(struct bitmap_block));
+    read_block(spr_ptr,1);
+    */
+    
+    struct superBlock * spr_ptr;
+    spr_ptr = (struct superBlock *) malloc (sizeof(struct superBlock));
+    read_block(spr_ptr,0);
+   
+
+    struct directoryBlock * directoryBlock_ptr;
+
+    directoryBlock_ptr = (struct directoryBlock *) malloc (sizeof(struct directoryblock));
+    
+    for (int i = 0; i < ROOT_BLOCK_SIZE; i++)
+    {
+        read_block(directoryBlock_ptr,i+5);
+        for (int j = 0; i < 32; j++)
+        {
+            // Bitmap location calculation ?? i * 
+            //if(spr_ptr->freeFCB[i*32+j])}
+            
+        if(spr_ptr->freeFCB[i*32+j] == 1 && strcmp(filename, directoryBlock_ptr->entryList[j].name) == 0)
+            {
+                printf("File already exist.");
+                return -1;
+            }
+    }
+    }
+    set_superblock_FCB(targetlocation);
+    struct directoryEntry * directoryEntry_ptr;
+    directoryEntry_ptr = (struct directoryEntry *) malloc (sizeof(struct directoryEntry));
+    directoryEntry_ptr->size = 0;
+    strcpy(directoryEntry_ptr->fileName,filename);
+
+   // directoryEntry_ptr->iNodeNo = 
+    
+    directory_entry_add(targetlocation,directoryBlock_ptr);
+
     return (0);
 }
 
 
+
+
+
+// DONE
 int sfs_open(char *file, int mode)
 {
-    return (0); 
+    struct directoryEntry* tmp;
+    tmp = (struct directoryEntry *)malloc(sizeof(struct directoryEntry));
+
+    if(directory_entry_finder(file,tmp) == -1){ printf("Directory entry finder could not find the entry ! \n");return -1;}
+    int locationHolder = -1 ;
+    for (int i = 0; i < MAX_FILE_SIZE; i++)
+    {
+        if(available_location_openFileTable[i] == 0){
+            locationHolder = i;
+            break;
+        }
+    }
+    if(locationHolder == -1){return -1;} 
+
+    strcpy(open_FileTable[locationHolder].fileName,tmp->fileName);
+    open_FileTable[locationHolder].iNodeNo = tmp->iNodeNo;
+    open_FileTable[locationHolder].size = tmp->size;
+    modes[locationHolder] = mode;
+    available_location_openFileTable[locationHolder] = 1;
+
+    return locationHolder; 
 }
 
+
+// DONE
 int sfs_close(int fd){
-    return (0); 
+    if(fd >= 0){
+        available_location_openFileTable[fd] = 0;
+        return (0); 
+    }else
+        return -1;
 }
 
+// DONE
 int sfs_getsize (int  fd)
 {
+    open_FileTable[fd].size;
     return (0); 
 }
+
 
 int sfs_read(int fd, void *buf, int n){
     return (0); 
 }
-
 
 int sfs_append(int fd, void *buf, int n)
 {
@@ -204,17 +303,21 @@ void bitmap_block_init(){
     struct bitmap_block * current_bitmap_block;
     current_bitmap_block = (struct bitmap_block *) malloc ( sizeof ( struct bitmap_block ) );
     
-        for (int j = 0; j < 4; j++)
-        {
-            // Which 0 means free space.
-            current_bitmap_block->bitmap[j] = 0;
-        }
 
+    for (int i = 0; i < MAX_FILE_SIZE; i++)
+    {
+       current_bitmap_block->bitmap[i] = 1;
+    }
+
+    write_block(current_bitmap_block,1);
+    
+    /*
     for (int i = 0; i < BITMAP_BLOCK_NO-1; i++)
     {
         // Since the root directories are from 5 to 9 (not included.)
         write_block(current_bitmap_block,i+1);
     }
+    */
     free(current_bitmap_block);   
 
 }
@@ -247,8 +350,9 @@ void directory_entry_block_init(){
     {
         current_entry_block->entryList[i].fileName[0] = '\0';
         current_entry_block->entryList[i].iNodeNo = 0;
+        current_entry_block->entryList[i].size = 0;
     }
-    for (int i = 0; i < ROOT_BLOCKS; i++)
+    for (int i = 0; i < ROOT_BLOCK_SIZE; i++)
     {
         // Since the root directories are from 5 to 9 (not included.)
         write_block(current_entry_block,i+5);
@@ -269,7 +373,7 @@ int directory_entry_add(int n, struct directoryEntry * ent){
 
     strcpy(dir_block->entryList[ofset].fileName, ent->fileName);
     dir_block->entryList[ofset].iNodeNo = ent->iNodeNo;
-
+    dir_block->entryList[ofset].size = ent->size;
     // real part 
     if(write_block(dir_block,directoryBlockNumber+1) != 1){
         return -1;
@@ -301,13 +405,19 @@ int directory_entry_finder(char * name, struct directoryEntry * ent ){
     return -1;
 }
 
+
+
+/*
+Checks the directory if is it free or not According to the Bitmap.
+*/
 int emptyDirectoryFounder(){
-    struct superBlock * super_ptr;
-    super_ptr = (struct superBlock *)malloc(sizeof(struct superBlock));
-    read_block(super_ptr,0);
+
+    struct bitmap_block * bitmap_ptr;
+    bitmap_ptr = (struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+    read_block(bitmap_ptr,0);
     for(int i = 0;i <MAX_FILE_SIZE;i++){
-        // 0 Means FCB is free
-        if(super_ptr->freeFCB[i] == 0){
+        // 1 Means FCB is free
+        if(bitmap_ptr->bitmap[i] == 1){
             return i;
         }
     }
