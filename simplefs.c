@@ -245,8 +245,6 @@ int sfs_create(char *filename)
 }
 
 
-
-
 // DONE
 int sfs_open(char *file, int mode)
 {
@@ -310,12 +308,7 @@ int sfs_delete(char *filename)
 
 
 
-
-
-
-
-
-
+// Add print disk method to check the status.
 
 
 
