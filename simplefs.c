@@ -195,7 +195,8 @@ int sfs_umount ()
 
 
 
-// Done but the bitmap | Superblock conflict occur.
+// Done 
+// RECHECK AGAIN
 int sfs_create(char *filename)
 {
     //Target location in FCB
