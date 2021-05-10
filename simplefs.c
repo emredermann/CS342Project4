@@ -7,7 +7,6 @@
 #include <fcntl.h>
 #include "simplefs.h"
 
-#define BITMAP_BLOCK_NO 4
 #define BLOCKSIZE 4096 // bytes
 #define FILENAMESIZE 110
 #define ENTRY_PER_BLOCK 32
@@ -15,25 +14,20 @@
 #define ENTRYBLOCKS 4
 #define MAX_FILE_SIZE 128
 #define FCB_SIZE 128
-#define ROOT_BLOCK_SIZE 4
-
+#define ROOT_BLOCK_NUMBER 4
+#define BITMAP_BLOCK_NUMBER 4
 
 //contains the pointers to all blocks occupied by the file.
 struct inode
 {
-    /*
-    int nodeID;
-    int userID;
-    int groupID;
-    int *dataBlockNumbers;
-*/
-    int * blockNumbers;
+    int indexNodeNo;
     int usedStatus;
 };
 
 struct directoryEntry
 {
     char fileName[FILENAMESIZE];
+    //File serial number for open table 
     int iNodeNo;
     int size;
     char filler [128 - sizeof(int) -FILENAMESIZE];
@@ -46,9 +40,15 @@ struct directoryblock
 //The size of the directory Entry declared as 128 in the assingment.
 // Contains the address of the index block(inode)
 
+struct index_block{
+    //  1kb / 4bytes
+    int  addresses [1024];
+};
 
 struct bitmap_block{
-    int bitmap[MAX_FILE_SIZE];
+    //Check the size calculation (Lecture 38 --> 09:00)
+    unsigned char bit_block[4096];
+    int EmptySpaceFlag;
 };
 
 struct FCB_block{
@@ -68,11 +68,10 @@ struct superBlock
 //MODE_READ 0
 //MODE_APPEND 1
 int modes[MAX_FILE_SIZE];
-
 int available_location_openFileTable[MAX_FILE_SIZE];
-
 struct directoryEntry open_FileTable[MAX_FILE_SIZE];
-
+int last_position[MAX_FILE_SIZE];
+int entry_position[MAX_FILE_SIZE];
 
 void inode_init(){}
 
@@ -157,7 +156,7 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     write_block(superBlock_ptr,0);
     free(superBlock_ptr);
 
-    bitmap_block_init();
+  //  bitmap_block_init();
 
     struct bitmap_block * bitmap_ptr = (struct bitmap_block *) malloc(sizeof(struct bitmap_block));
     read_block(bitmap_ptr,1);
@@ -219,7 +218,7 @@ int sfs_create(char *filename)
 
     directoryBlock_ptr = (struct directoryblock *) malloc (sizeof(struct directoryblock));
     
-    for (int i = 0; i < ROOT_BLOCK_SIZE; i++)
+    for (int i = 0; i < ROOT_BLOCK_NUMBER; i++)
     {
         read_block(directoryBlock_ptr,i+5);
         for (int j = 0; i < 32; j++)
@@ -241,7 +240,7 @@ int sfs_create(char *filename)
     directoryEntry_ptr->size = 0;
     strcpy(directoryEntry_ptr->fileName,filename);
 
-   // directoryEntry_ptr->iNodeNo = 
+   
     
     directory_entry_add(targetlocation,directoryBlock_ptr);
 
@@ -254,8 +253,8 @@ int sfs_open(char *file, int mode)
 {
     struct directoryEntry* tmp;
     tmp = (struct directoryEntry *)malloc(sizeof(struct directoryEntry));
-
-    if(directory_entry_finder(file,tmp) == -1){ printf("Directory entry finder could not find the entry ! \n");return -1;}
+    int entryLocation =  directory_entry_finder(file,tmp) ;
+    if(entryLocation == -1){ printf("Directory entry finder could not find the entry ! \n");return -1;}
     int locationHolder = -1 ;
     for (int i = 0; i < MAX_FILE_SIZE; i++)
     {
@@ -265,13 +264,12 @@ int sfs_open(char *file, int mode)
         }
     }
     if(locationHolder == -1){return -1;} 
-
     strcpy(open_FileTable[locationHolder].fileName,tmp->fileName);
     open_FileTable[locationHolder].iNodeNo = tmp->iNodeNo;
     open_FileTable[locationHolder].size = tmp->size;
     modes[locationHolder] = mode;
     available_location_openFileTable[locationHolder] = 1;
-
+    entry_position[locationHolder] = entryLocation;
     return locationHolder; 
 }
 
@@ -294,6 +292,13 @@ int sfs_getsize (int  fd)
 
 
 
+//FCB
+//index table
+//offset logical address 5000
+//5000 / (1024 * 4096)(4MB) ==> outer table entry
+// 5000 / 4096 = 1 ==> inner block entry       (LOGICAL BLOCK,              OFFSET)
+// 5000 % 4096 = 904 ==> block displacement (inner blcok akrşılığı 1 in ,offset(904))
+
 int sfs_read(int fd, void *buf, int n){
     return (0); 
 }
@@ -309,44 +314,42 @@ int sfs_delete(char *filename)
     return (0); 
 }
 
-
-
-
-
 // Add print disk method to check the status.
 
 
 
-
-
-
-
-
-
-
-
 void bitmap_block_init(){
+
     struct bitmap_block * current_bitmap_block;
     current_bitmap_block = (struct bitmap_block *) malloc ( sizeof ( struct bitmap_block ) );
     
 
-    for (int i = 0; i < MAX_FILE_SIZE; i++)
-    {
-       current_bitmap_block->bitmap[i] = 1;
-    }
+    current_bitmap_block->bitmap = (uint *)calloc((BITMAP_BLOCK_NUMBER/32) + ((BITMAP_BLOCK_NUMBER % 4) != 0) , 4);
 
     write_block(current_bitmap_block,1);
     
-    /*
-    for (int i = 0; i < BITMAP_BLOCK_NO-1; i++)
+
+    for (int i = 0; i < BITMAP_BLOCK_NUMBER-1; i++)
     {
-        // Since the root directories are from 5 to 9 (not included.)
+        // Since the bitmap blocks are from 1 to 5 (not included.)
         write_block(current_bitmap_block,i+1);
     }
-    */
     free(current_bitmap_block);   
+}
+
+
+
+int bitmap_is_allocated(int index){
+    struct bitmap_block * current_bitmap_block;
+    current_bitmap_block = (struct bitmap_block *) malloc ( sizeof ( struct bitmap_block ) );
+    
+    read_block(current_bitmap_block,(index /4));
+    
+    return (current_bitmap_block->bitmap[index/32] & (1 << (index % 4))) != 0;
+
 
 }
+
 
 /*
 void fcb_block_init(){
@@ -366,7 +369,8 @@ void fcb_block_init(){
 }
 */
 
-
+//************************************************
+//Directory Entry methods
 
 void directory_entry_block_init(){
     struct directoryblock * current_entry_block;
@@ -378,7 +382,7 @@ void directory_entry_block_init(){
         current_entry_block->entryList[i].iNodeNo = 0;
         current_entry_block->entryList[i].size = 0;
     }
-    for (int i = 0; i < ROOT_BLOCK_SIZE; i++)
+    for (int i = 0; i < ROOT_BLOCK_NUMBER; i++)
     {
         // Since the root directories are from 5 to 9 (not included.)
         write_block(current_entry_block,i+5);
@@ -432,10 +436,8 @@ int directory_entry_finder(char * name, struct directoryEntry * ent ){
 }
 
 
+//Checks the directory if is it free or not According to the Bitmap.
 
-/*
-Checks the directory if is it free or not According to the Bitmap.
-*/
 int emptyDirectoryFounder(){
 
     struct bitmap_block * bitmap_ptr;
