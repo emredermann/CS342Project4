@@ -27,6 +27,7 @@ struct inode
     int groupID;
     int *dataBlockNumbers;
 */
+    int * blockNumbers;
     int usedStatus;
 };
 
@@ -297,6 +298,7 @@ int sfs_read(int fd, void *buf, int n){
     return (0); 
 }
 
+// Allocate the index data num when needed.
 int sfs_append(int fd, void *buf, int n)
 {
     return (0); 
