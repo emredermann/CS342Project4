@@ -47,8 +47,8 @@ struct index_block{
 
 struct bitmap_block{
     //Check the size calculation (Lecture 38 --> 09:00)
-    unsigned char bit_block[4096];
-    int EmptySpaceFlag;
+    int bit_block[4];
+ 
 };
 
 struct FCB_block{
@@ -156,15 +156,7 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     write_block(superBlock_ptr,0);
     free(superBlock_ptr);
 
-  //  bitmap_block_init();
-
-    struct bitmap_block * bitmap_ptr = (struct bitmap_block *) malloc(sizeof(struct bitmap_block));
-    read_block(bitmap_ptr,1);
-    for (int i = 0; i < 5; i++)
-    {
-        bitmap_ptr->bitmap[i] = 0;
-    }
-    write_block(bitmap_ptr,1);
+    bitmap_block_init();
 
 
     directory_entry_block_init();
@@ -306,11 +298,6 @@ int sfs_read(int fd, void *buf, int n){
     if(open_FileTable[fd].size < (last_position[fd]+n) )
         return -1;
 
-
-    int initial_position = last_position[fd];
-    int outerIndex_block = ((initial_position + n -1)/BLOCKSIZE) - initial_position /BLOCKSIZE+1;
-    int innerIndexBlock =
-
     //GET Block From Position
     
 
@@ -337,14 +324,21 @@ void bitmap_block_init(){
 
     struct bitmap_block * current_bitmap_block;
     current_bitmap_block = (struct bitmap_block *) malloc ( sizeof ( struct bitmap_block ) );
-    
-
-    current_bitmap_block->bitmap = (uint *)calloc((BITMAP_BLOCK_NUMBER/32) + ((BITMAP_BLOCK_NUMBER % 4) != 0) , 4);
+    for (int i = 0; i < BITMAP_BLOCK_NUMBER; i++)
+    {
+        current_bitmap_block->bit_block[i] = 1;   
+    }
+    //current_bitmap_block->bit_block = (uint *)calloc((BITMAP_BLOCK_NUMBER/32) + ((BITMAP_BLOCK_NUMBER % 4) != 0) , 4);
 
     write_block(current_bitmap_block,1);
-    
+    current_bitmap_block->bit_block[0] = 1;
+    write_block(current_bitmap_block,2);
 
-    for (int i = 0; i < BITMAP_BLOCK_NUMBER-1; i++)
+    for (int i = 0; i < BITMAP_BLOCK_NUMBER; i++)
+    {
+        current_bitmap_block->bit_block[i] = 0;   
+    }
+    for (int i = 2; i < BITMAP_BLOCK_NUMBER; i++)
     {
         // Since the bitmap blocks are from 1 to 5 (not included.)
         write_block(current_bitmap_block,i+1);
