@@ -298,9 +298,24 @@ int sfs_getsize (int  fd)
 //5000 / (1024 * 4096)(4MB) ==> outer table entry
 // 5000 / 4096 = 1 ==> inner block entry       (LOGICAL BLOCK,              OFFSET)
 // 5000 % 4096 = 904 ==> block displacement (inner blcok akrşılığı 1 in ,offset(904))
-
+//(lecture 37 - 40:00)
 int sfs_read(int fd, void *buf, int n){
-    return (0); 
+
+    if(fd > MAX_FILE_SIZE || modes[fd] == 0)
+        return -1;
+    if(open_FileTable[fd].size < (last_position[fd]+n) )
+        return -1;
+
+
+    int initial_position = last_position[fd];
+    int outerIndex_block = ((initial_position + n -1)/BLOCKSIZE) - initial_position /BLOCKSIZE+1;
+    int innerIndexBlock =
+
+    //GET Block From Position
+    
+
+
+
 }
 
 // Allocate the index data num when needed.
