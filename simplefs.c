@@ -42,7 +42,7 @@ struct directoryblock
 
 struct index_block{
     //  1kb / 4bytes
-    int  addresses [1024];
+    int  block_numbers [128];
 };
 
 struct bitmap_block{
@@ -299,12 +299,77 @@ int sfs_read(int fd, void *buf, int n){
         return -1;
 
     //GET Block From Position
-    
+    int starting_pos = last_position[fd];
+    int remained_blocks = (starting_pos +n -1) / BLOCKSIZE-starting_pos/BLOCKSIZE+1;    
+
+    //last_position[fd] (buf_position)
+    int b_position =0;
+//**********************************************************************************
+    //open_FileTable[fd] fbc
+    int current_block = open_FileTable[fd].iNodeNo;
+
+    struct index_block * tmp;
+        tmp = (struct index_block *)malloc (sizeof(struct index_block));
 
 
+    for(int i = 0; i < b_position / BLOCKSIZE; i++){
+        get_index_block_entry(current_block,tmp);
+        current_block = tmp->block_numbers;
+    }
+//***********************************************************************************?
 
+    int current_offset;
+    char* data = malloc(BLOCKSIZE);
+
+    read_block(data,current_block);
+    for (int i = 0; i < remained_blocks; i++)
+    {
+        // For the last block
+        if(i == remained_blocks - 1){
+            int l_ofset = (starting_pos + n) % BLOCKSIZE;
+            if(l_ofset == 0){
+                l_ofset = BLOCKSIZE;
+            }
+            for(current_offset = last_position[fd] % BLOCKSIZE; current_offset < l_ofset; current_offset++){
+                ((char*)buf)[b_position] = data[current_offset];
+                b_position++;
+            }
+           // fd
+           int tmp_size = l_ofset-(last_position[fd]%BLOCKSIZE);
+            if(open_FileTable[fd].size >= last_position[fd]+tmp_size){
+                last_position[fd] += tmp_size;
+            }
+        }else{
+            for(current_offset = last_position[fd] % BLOCKSIZE; current_offset < BLOCKSIZE; current_offset++){
+                ((char*)buf)[b_position] = data[current_offset];
+                b_position++;
+            }
+            int tmp_size = BLOCKSIZE-(last_position[fd]%BLOCKSIZE);
+            if(open_FileTable[fd].size >= last_position[fd]+tmp_size){
+                last_position[fd] += tmp_size;
+            }
+//*******************************************************************************!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*************
+           // Read the next indexed block number 
+           //current_block = ;
+            read_block(data,current_block);
+//****************************************************************************************!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!***********
+    }
+    //number of bytes readed succesfully.
+    return n;
 }
 
+
+int get_index_block_entry(int n, struct index_block *input){
+    int index_block_num = n /(BLOCKSIZE/sizeof(struct index_block));
+    int ofset = n - index_block_num *(BLOCKSIZE /sizeof(struct index_block));
+    struct index_block * tmp;
+    tmp = (struct index_block *)malloc (sizeof(struct index_block));
+    read_block(tmp,index_block_num+MAX_FILE_SIZE * sizeof(struct directoryEntry) / BLOCKSIZE);
+    for (int i = 0; i < 128; i++)
+    {
+        input->block_numbers[i] = tmp->block_numbers[i];
+    }
+}
 // Allocate the index data num when needed.
 int sfs_append(int fd, void *buf, int n)
 {
@@ -354,7 +419,7 @@ int bitmap_is_allocated(int index){
     
     read_block(current_bitmap_block,(index /4));
     
-    return (current_bitmap_block->bitmap[index/32] & (1 << (index % 4))) != 0;
+    return (current_bitmap_block->bit_block[index/32] & (1 << (index % 4))) != 0;
 
 
 }
