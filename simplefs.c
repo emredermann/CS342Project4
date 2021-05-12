@@ -16,6 +16,8 @@
 #define FCB_SIZE 128
 #define ROOT_BLOCK_NUMBER 4
 #define BITMAP_BLOCK_NUMBER 4
+#define SHIFT 3             //1 byte = 8 bits Which means the FCB size. ==> 7
+#define MASK 0x7
 
 //contains the pointers to all blocks occupied by the file.
 struct inode
@@ -32,7 +34,7 @@ struct directoryEntry
     //File serial number for open table 
     int iNodeNo;
     int size;
-    char filler [128 - sizeof(int) -FILENAMESIZE];
+    char filler [128 - sizeof(int) - sizeof(char) * FILENAMESIZE];
 };
 
 struct directoryblock
@@ -44,14 +46,63 @@ struct directoryblock
 
 struct index_node{
     //  1kb / 4bytes
-    int  block_numbers [128];
+    // 32 -->8
+    //128 --> 32
+    int  block_numbers [32];
 };
 
 struct bitmap_block{
     //Check the size calculation (Lecture 38 --> 09:00)
-    int bit_block[4];
+   unsigned char bitmap[4096];
  
 };
+
+
+// (Number of bits per word) * (number of 0 values words)+  offset of first 1 in the non zero word.
+void bitmap_block_init(){
+
+       struct bitmap_block  * bitmap =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+       size_t bytes = (BLOCKSIZE >> SHIFT) + ((BLOCKSIZE & MASK) ? 1 : 1);
+       void *map = malloc(bytes);
+       for (int i = 0; i < ROOT_BLOCK_NUMBER; i++)
+    {
+        // Since the root directories are from 5 to 9 (not included.)
+        write_block(bitmap,i+1);
+    }
+}
+
+
+// index is the inodeNo
+int bitmap_block_set(int index){
+    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+     //Decide which blocok is the bitmap going to read.
+        read_block(bitmap_block,(index / MAXFILES)+1);
+        int word = index >> SHIFT;
+        int position = index & MASK;
+        bitmap_block->bitmap[word] |=  1 << position; 
+        write_block(bitmap_block,1);
+}
+
+// index is the inodeNo
+int bitmap_block_clear(int index){
+    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+      //Decide which blocok is the bitmap going to read.
+        read_block(bitmap_block,(index / MAXFILES)+1);
+        int word = index >> SHIFT;
+        int position = index & MASK;
+        bitmap_block->bitmap[word] &=  ~(1 << position); 
+        write_block(bitmap_block,1);
+}
+// index is the inodeNo
+int bitmap_read_read(int index){
+    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+     //Decide which block is the bitmap going to read.
+        read_block(bitmap_block,(index / MAXFILES)+1);
+        int word = index >> SHIFT;
+        int position = index & MASK;
+       return (bitmap_block->bitmap[word]>> position); 
+}
+
 
 struct FCB_block{
     struct inode inodes[32];
@@ -67,7 +118,6 @@ struct superBlock
 
 };
 
-
 //MODE_READ 0
 //MODE_APPEND 1
 int modes[MAX_FILE_SIZE];
@@ -75,6 +125,7 @@ int available_location_openFileTable[MAX_FILE_SIZE];
 struct directoryEntry open_FileTable[MAX_FILE_SIZE];
 int last_position[MAX_FILE_SIZE];
 int entry_position[MAX_FILE_SIZE];
+
 
 void inode_init(){}
 
@@ -360,7 +411,7 @@ int sfs_read(int fd, void *buf, int n){
     //number of bytes readed succesfully.
     return n;
 }
-
+}
 
 int get_index_block_entry(int n, struct index_block *input) {
 
@@ -373,6 +424,7 @@ int get_index_block_entry(int n, struct index_block *input) {
     read_block(tmp,index_block_num+MAX_FILE_SIZE * sizeof(struct directoryEntry) / BLOCKSIZE);
     for (int i = 0; i < 128; i++)
     {
+         
         input->block_numbers[i] = tmp->block_numbers[i];
     }
 }
@@ -390,7 +442,7 @@ int sfs_delete(char *filename)
 // Add print disk method to check the status.
 
 
-
+/*
 void bitmap_block_init(){
 
     struct bitmap_block * current_bitmap_block;
@@ -425,11 +477,11 @@ int bitmap_is_allocated(int index){
     
     read_block(current_bitmap_block,(index /4));
     
-    return (current_bitmap_block->bit_block[index/32] & (1 << (index % 4))) != 0;
+    return (current_bitmap_block->bit_block[index/4] & (1 << (index % 4))) != 0;
 
 
 }
-
+*/
 
 /*
 void fcb_block_init(){
@@ -447,6 +499,15 @@ void fcb_block_init(){
     }
     free(current_fcb_block);   
 }
+
+int set_bitmap_block(int location){
+    struct bitmap_block * super_ptr;
+    super_ptr = (struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+    read_block(super_ptr,0);
+    super_ptr->bitmap[location] = 1;
+    write_block(super_ptr,0);
+}
+
 */
 
 //************************************************
@@ -539,16 +600,6 @@ int set_superblock_FCB(int location){
     super_ptr->freeFCB[location] = 1;
     write_block(super_ptr,0);
 }
-
-
-int set_bitmap_block(int location){
-    struct bitmap_block * super_ptr;
-    super_ptr = (struct bitmap_block *)malloc(sizeof(struct bitmap_block));
-    read_block(super_ptr,0);
-    super_ptr->bitmap[location] = 1;
-    write_block(super_ptr,0);
-}
-
 
 int directory_entry_getter(int n, struct  directoryEntry * output){
      int directoryBlockNumber = n / 32; 
