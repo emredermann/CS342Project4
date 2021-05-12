@@ -22,6 +22,8 @@ struct inode
 {
     int indexNodeNo;
     int usedStatus;
+    struct index_node * index_node;
+    char filler [128 - (2 * sizeof(int)) - sizeof(struct index_node *)];
 };
 
 struct directoryEntry
@@ -40,7 +42,7 @@ struct directoryblock
 //The size of the directory Entry declared as 128 in the assingment.
 // Contains the address of the index block(inode)
 
-struct index_block{
+struct index_node{
     //  1kb / 4bytes
     int  block_numbers [128];
 };
@@ -61,6 +63,7 @@ struct superBlock
     // int blocksPerGroup;   
     int freeFCB[MAX_FILE_SIZE];
     int totalNumberOfBlocks;
+    int blockSize;
 
 };
 
@@ -309,7 +312,7 @@ int sfs_read(int fd, void *buf, int n){
     int current_block = open_FileTable[fd].iNodeNo;
 
     struct index_block * tmp;
-        tmp = (struct index_block *)malloc (sizeof(struct index_block));
+        tmp = (struct index_block *)malloc (sizeof(struct index_block *));
 
 
     for(int i = 0; i < b_position / BLOCKSIZE; i++){
@@ -359,11 +362,14 @@ int sfs_read(int fd, void *buf, int n){
 }
 
 
-int get_index_block_entry(int n, struct index_block *input){
-    int index_block_num = n /(BLOCKSIZE/sizeof(struct index_block));
-    int ofset = n - index_block_num *(BLOCKSIZE /sizeof(struct index_block));
+int get_index_block_entry(int n, struct index_block *input) {
+
+    int index_block_num = n / (BLOCKSIZE/sizeof(struct index_block *));
+    int ofset = n - index_block_num *(BLOCKSIZE /sizeof(struct index_block *));
+
     struct index_block * tmp;
     tmp = (struct index_block *)malloc (sizeof(struct index_block));
+
     read_block(tmp,index_block_num+MAX_FILE_SIZE * sizeof(struct directoryEntry) / BLOCKSIZE);
     for (int i = 0; i < 128; i++)
     {
