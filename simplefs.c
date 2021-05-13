@@ -16,15 +16,22 @@
 #define FCB_SIZE 128
 #define ROOT_BLOCK_NUMBER 4
 #define BITMAP_BLOCK_NUMBER 4
-#define SHIFT 3             //1 byte = 8 bits Which means the FCB size. ==> 7
+#define SHIFT 3             //1 byte = 8 bits Which means the FCB size. 
 #define MASK 0x7
 
+/*
+** SHIFT used the index to locate the 128 bits FCB's
+** MASK used the index to locate the offset in the 128 bits block.
+*/
+
+
+#define SECTOR_SIZE 128
 //contains the pointers to all blocks occupied by the file.
 struct inode
 {
+    int inodeNo;
     int indexNodeNo;
     int usedStatus;
-    struct index_node * index_node;
     char filler [128 - (2 * sizeof(int)) - sizeof(struct index_node *)];
 };
 
@@ -34,6 +41,7 @@ struct directoryEntry
     //File serial number for open table 
     int iNodeNo;
     int size;
+    int usedStatus;
     char filler [128 - sizeof(int) - sizeof(char) * FILENAMESIZE];
 };
 
@@ -45,64 +53,20 @@ struct directoryblock
 // Contains the address of the index block(inode)
 
 struct index_node{
-    //  1kb / 4bytes
-    // 32 -->8
-    //128 --> 32
-    int  block_numbers [32];
+    //  4kb / 4bytes
+    // block no of the each file data blocks
+    int block_numbers [1024];
+};
+
+struct index_node_block{
+    struct index_node index_node_table[MAX_FILE_SIZE];
 };
 
 struct bitmap_block{
     //Check the size calculation (Lecture 38 --> 09:00)
    unsigned char bitmap[4096];
- 
+    
 };
-
-
-// (Number of bits per word) * (number of 0 values words)+  offset of first 1 in the non zero word.
-void bitmap_block_init(){
-
-       struct bitmap_block  * bitmap =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
-       size_t bytes = (BLOCKSIZE >> SHIFT) + ((BLOCKSIZE & MASK) ? 1 : 1);
-       void *map = malloc(bytes);
-       for (int i = 0; i < ROOT_BLOCK_NUMBER; i++)
-    {
-        // Since the root directories are from 5 to 9 (not included.)
-        write_block(bitmap,i+1);
-    }
-}
-
-
-// index is the inodeNo
-int bitmap_block_set(int index){
-    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
-     //Decide which blocok is the bitmap going to read.
-        read_block(bitmap_block,(index / MAXFILES)+1);
-        int word = index >> SHIFT;
-        int position = index & MASK;
-        bitmap_block->bitmap[word] |=  1 << position; 
-        write_block(bitmap_block,1);
-}
-
-// index is the inodeNo
-int bitmap_block_clear(int index){
-    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
-      //Decide which blocok is the bitmap going to read.
-        read_block(bitmap_block,(index / MAXFILES)+1);
-        int word = index >> SHIFT;
-        int position = index & MASK;
-        bitmap_block->bitmap[word] &=  ~(1 << position); 
-        write_block(bitmap_block,1);
-}
-// index is the inodeNo
-int bitmap_read_read(int index){
-    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
-     //Decide which block is the bitmap going to read.
-        read_block(bitmap_block,(index / MAXFILES)+1);
-        int word = index >> SHIFT;
-        int position = index & MASK;
-       return (bitmap_block->bitmap[word]>> position); 
-}
-
 
 struct FCB_block{
     struct inode inodes[32];
@@ -115,8 +79,150 @@ struct superBlock
     int freeFCB[MAX_FILE_SIZE];
     int totalNumberOfBlocks;
     int blockSize;
-
+    int current_available_block;
 };
+
+
+void fcb_block_init(){
+    struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
+    for (int i = 0; i < 32; i++)
+    {
+        fcb_block_ptr->inodes[i].usedStatus = 0;
+    }
+    for (int i = 0; i < 4; i++)
+    {
+        write_block(fcb_block_ptr,i+9);
+    }
+}
+// if -1 means no empty location founded
+int get_empty_inodeNo_in_fcb(){
+    struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
+    for (int i = 0; i < 4; i++)
+    {
+        read_block(fcb_block_ptr,i+9);
+        for(int j = 0;j < 32;j++){
+            if(fcb_block_ptr->inodes[j].usedStatus == 0){
+                //inode number of fcb.
+                return (i * 32) + j;
+            }
+        }
+    }
+    return -1;
+    
+}
+
+// if -1 means fcb could not founded
+int get_indexTable_locaiton_of_specific_file(int inodeNo){
+     struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
+     int block_location = (inodeNo / 32)+9;
+     int offset = inodeNo % 32;
+
+    read_block(fcb_block_ptr,block_location);
+   if(fcb_block_ptr->inodes[offset].usedStatus == 1){
+        return fcb_block_ptr->inodes[offset].indexNodeNo;
+    }return -1;
+
+}
+
+// if -1 means fcb already allocated.
+void set_fcb_block(int inodeNo){
+    struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
+     int block_location = (inodeNo / 32)+9;
+     int offset = inodeNo % 32;
+
+    read_block(fcb_block_ptr,block_location);
+   if(fcb_block_ptr->inodes[offset].usedStatus == 1){
+        return -1;
+    }
+    fcb_block_ptr->inodes[offset].usedStatus = 1;
+    write_block(fcb_block_ptr,block_location);
+
+    return 0;
+
+}
+
+// (Number of bits per word) * (number of 0 values words)+  offset of first 1 in the non zero word.
+void bitmap_block_init(){
+    struct bitmap_block  * bitmap =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+    
+    for (int i = 0; i < 4096; i++)
+    {
+        bitmap->bitmap[i] = '0';
+    }
+    
+    for (int i = 0; i < ROOT_BLOCK_NUMBER; i++)
+
+    {
+        // Since the bitmap are from 1 to 5 (not included.)
+        write_block(bitmap,i+1);
+    }
+    
+/*
+       struct bitmap_block  * bitmap =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+       size_t bytes = (BLOCKSIZE >> SHIFT) + ((BLOCKSIZE & MASK) ? 1 : 1);
+       void *map = malloc(bytes);
+
+       for (int i = 0; i < ROOT_BLOCK_NUMBER; i++)
+    {
+        // Since the root directories are from 5 to 9 (not included.)
+        write_block(bitmap,i+1);
+    }
+    */
+}
+
+void print_bitmap(){
+    struct bitmap_block  * bitmap =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+    for (int  i = 0; i < 4; i++)
+    {
+         read_block(bitmap,i+1);
+         for (int j = 0; j < 4096; j++)
+         {
+             printf("{s} ",bitmap->bitmap[j]);
+         }
+         printf("\n");                 
+    }
+    
+}
+
+// index is the inodeNo
+int bitmap_block_set(int index){
+
+    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block)); 
+     //Decide which block is the bitmap going to read.
+        read_block(bitmap_block,(index / (4096 * 8))+1);
+        int word = index >> SHIFT;
+        int position =index & MASK;
+        bitmap_block->bitmap[word] |= 1 << position;  
+    /*
+        int word = index >> SHIFT;
+        int position = index & MASK;
+        bitmap_block->bitmap[word] |=  1 << position; 
+    */
+        write_block(bitmap_block,(index / (4096 * 8))+1);
+}
+
+// index is the inodeNo
+int bitmap_block_clear(int index){
+
+    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+      //Decide which blocok is the bitmap going to read.
+        read_block(bitmap_block,(index /(4096 * 8))+1);
+        int word = index >> SHIFT;
+        int position = index & MASK;
+        bitmap_block->bitmap[word] &=  ~(1 << position); 
+        write_block(bitmap_block,(4096 * 8));
+}
+// index is the inodeNo
+
+int bitmap_read(int index){
+    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+     //Decide which block is the bitmap going to read.
+        read_block(bitmap_block,(index / (4096 * 8))+1);
+        int word = index >> SHIFT;
+        int position = index & MASK;
+       return (bitmap_block->bitmap[word]>> position) &1; 
+}
+
 
 //MODE_READ 0
 //MODE_APPEND 1
@@ -201,22 +307,26 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     // .. your code...
 
     sfs_mount(vdiskname);
+
+    // Super block init***************************************
     struct superBlock * superBlock_ptr = (struct superBlock *) malloc(sizeof(struct superBlock));
     superBlock_ptr->blockCount = size / BLOCKSIZE;
+    superBlock_ptr->blockSize = BLOCKSIZE;
+
     for (int i = 0; i < MAX_FILE_SIZE; ++i)
     {
         superBlock_ptr->freeFCB[i] = 0;
     }
+    superBlock_ptr->current_available_block = 13;
+    superBlock_ptr->totalNumberOfBlocks = 12;
     write_block(superBlock_ptr,0);
-    free(superBlock_ptr);
-
+    //****************************************
     bitmap_block_init();
-
-
+    
+    for(int i = 0;i<5;i++){bitmap_block_set(i);}
+    
     directory_entry_block_init();
 
-
-    
     sfs_umount();
     return (0); 
 }
@@ -245,21 +355,10 @@ int sfs_umount ()
 // RECHECK AGAIN
 int sfs_create(char *filename)
 {
-    //Target location in FCB
-    int targetlocation = emptyDirectoryFounder(filename);
+    //Target location in directoryEntry
+    int targetlocation = emptyDirectoryFounder();
     if(targetlocation == -1){return -1;}
     
-    /*
-    struct bitmap_block * spr_ptr;
-    spr_ptr = (struct bitmap_block *) malloc (sizeof(struct bitmap_block));
-    read_block(spr_ptr,1);
-    */
-    
-    struct superBlock * spr_ptr;
-    spr_ptr = (struct superBlock *) malloc (sizeof(struct superBlock));
-    read_block(spr_ptr,0);
-   
-
     struct directoryblock * directoryBlock_ptr;
 
     directoryBlock_ptr = (struct directoryblock *) malloc (sizeof(struct directoryblock));
@@ -269,18 +368,15 @@ int sfs_create(char *filename)
         read_block(directoryBlock_ptr,i+5);
         for (int j = 0; i < 32; j++)
         {
-            // Bitmap location calculation ?? i * 
-            //if(spr_ptr->freeFCB[i*32+j])}
-            
-        if((spr_ptr->freeFCB[i*32+j] == 1) && (strcmp(filename, directoryBlock_ptr->entryList[j].fileName) == 0))
+            // Checks the status of the fcb according to the data stored in the superblock.
+        if((strcmp(filename, directoryBlock_ptr->entryList[j].fileName) == 0))
             {
                 printf("File already exist.");
                 return -1;
             }
     }
     }
-    //set_bitmap_block(targetlocation);
-    set_superblock_FCB(targetlocation);
+    set_fcb_block(targetlocation);
     struct directoryEntry * directoryEntry_ptr;
     directoryEntry_ptr = (struct directoryEntry *) malloc (sizeof(struct directoryEntry));
     directoryEntry_ptr->size = 0;
@@ -521,6 +617,7 @@ void directory_entry_block_init(){
     {
         current_entry_block->entryList[i].fileName[0] = '\0';
         current_entry_block->entryList[i].iNodeNo = 0;
+        current_entry_block->entryList[i].usedStatus = 0;
         current_entry_block->entryList[i].size = 0;
     }
     for (int i = 0; i < ROOT_BLOCK_NUMBER; i++)
@@ -532,42 +629,46 @@ void directory_entry_block_init(){
     
 }
 
-int directory_entry_add(int n, struct directoryEntry * ent){
-    int directoryBlockNumber = n / 32; 
-    int ofset = n-directoryBlockNumber * 32;
+
+// created directory entry added to the specific position.
+int directory_entry_add(int directory_enrty_no, struct directoryEntry * ent){
+    
+    int directoryBlockNumber = directory_enrty_no / 32; 
+    int ofset = (directory_enrty_no % 32);
+    
     struct directoryblock * dir_block;
     dir_block = (struct directoryblock *) malloc(sizeof(struct directoryblock));
 
-    if(read_block(dir_block,directoryBlockNumber+1) != 1){
+    if(read_block(dir_block,directoryBlockNumber + 1) != 1){
         return -1;
     }
 
     strcpy(dir_block->entryList[ofset].fileName, ent->fileName);
     dir_block->entryList[ofset].iNodeNo = ent->iNodeNo;
+    dir_block->entryList[ofset].usedStatus = 1;
     dir_block->entryList[ofset].size = ent->size;
+    
     // real part 
     if(write_block(dir_block,directoryBlockNumber+1) != 1){
         return -1;
     }
-    
     return 1;
 }
 
-int directory_entry_finder(char * name, struct directoryEntry * ent ){
 
-    struct superBlock * ptr;
-    ptr = (struct superBlock *) malloc(sizeof(struct superBlock));
+//find_dir_entry
+int directory_entry_location_finder_byName(char * name, struct directoryEntry * ent ){
 
-    read_block(ptr,0);
     struct directoryblock * dir_block;
     dir_block = (struct directoryblock *) malloc(sizeof(struct directoryblock));
     for (int i = 0; i < 4; i++)
     {
         read_block(dir_block,i+5);
         for(int j = 0;j<32;j++){
-            if(ptr->freeFCB[(i*32)+j] == 1 && (strcmp(name,dir_block->entryList[j].fileName) == 0)){
+            if((strcmp(name,dir_block->entryList[j].fileName) == 0)){
                     ent->iNodeNo = dir_block->entryList[j].iNodeNo;
                     strcpy(ent->fileName,dir_block->entryList[j].fileName); 
+                    ent->size = dir_block->entryList[j].size;
             // Block size / sizeof(struct directory entry) = 32
                     return (i*32)+j;
             }
@@ -577,43 +678,20 @@ int directory_entry_finder(char * name, struct directoryEntry * ent ){
 }
 
 
-//Checks the directory if is it free or not According to the Bitmap.
-
-int emptyDirectoryFounder(){
-
-    struct bitmap_block * bitmap_ptr;
-    bitmap_ptr = (struct bitmap_block *)malloc(sizeof(struct bitmap_block));
-    read_block(bitmap_ptr,0);
-    for(int i = 0;i <MAX_FILE_SIZE;i++){
-        // 1 Means FCB is free
-        if(bitmap_ptr->bitmap[i] == 1){
-            return i;
-        }
-    }
-}
-
-// Sets the superblocks FCB item.
-int set_superblock_FCB(int location){
-    struct superBlock * super_ptr;
-    super_ptr = (struct superBlock *)malloc(sizeof(struct superBlock));
-    read_block(super_ptr,0);
-    super_ptr->freeFCB[location] = 1;
-    write_block(super_ptr,0);
-}
-
-int directory_entry_getter(int n, struct  directoryEntry * output){
-     int directoryBlockNumber = n / 32; 
-    int ofset = n-directoryBlockNumber * 32;
+//Checks the free directory entry position according to the superblock
+//-1 means no empty location
+int empty_Directory_location_Founder(){
     struct directoryblock * dir_block;
     dir_block = (struct directoryblock *) malloc(sizeof(struct directoryblock));
-
-    if(read_block(dir_block,directoryBlockNumber+1) != 1){
-        return -1;
+    for (int i = 0; i < 4; i++)
+    {
+        read_block(dir_block,i+5);
+        for(int j = 0;j<32;j++){
+            if(dir_block->entryList[j].usedStatus == 0){
+                return (i*32)+j;
+            }
+        }
+    
     }
-
-    strcpy(dir_block->entryList[ofset].fileName, output->fileName);
-    dir_block->entryList[ofset].iNodeNo = output->iNodeNo;
-    return 1;
-
-
+    return -1;
 }
