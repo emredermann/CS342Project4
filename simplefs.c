@@ -52,15 +52,14 @@ struct directoryblock
 //The size of the directory Entry declared as 128 in the assingment.
 // Contains the address of the index block(inode)
 
-struct index_node{
+
+// The initialized block number of the index_block must be set to the appropriate inode.
+struct index_block{
     //  4kb / 4bytes
     // block no of the each file data blocks
     int block_numbers [1024];
 };
 
-struct index_node_block{
-    struct index_node index_node_table[MAX_FILE_SIZE];
-};
 
 struct bitmap_block{
     //Check the size calculation (Lecture 38 --> 09:00)
@@ -381,9 +380,6 @@ int sfs_create(char *filename)
     directoryEntry_ptr = (struct directoryEntry *) malloc (sizeof(struct directoryEntry));
     directoryEntry_ptr->size = 0;
     strcpy(directoryEntry_ptr->fileName,filename);
-
-   
-    
     directory_entry_add(targetlocation,directoryBlock_ptr);
 
     return (0);
@@ -434,12 +430,7 @@ int sfs_getsize (int  fd)
 
 
 
-//FCB
-//index table
-//offset logical address 5000
-//5000 / (1024 * 4096)(4MB) ==> outer table entry
-// 5000 / 4096 = 1 ==> inner block entry       (LOGICAL BLOCK,              OFFSET)
-// 5000 % 4096 = 904 ==> block displacement (inner blcok akrşılığı 1 in ,offset(904))
+
 //(lecture 37 - 40:00)
 int sfs_read(int fd, void *buf, int n){
 
