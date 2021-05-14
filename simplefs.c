@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include "simplefs.h"
 
+#define SECTOR_SIZE 128
 #define BLOCKSIZE 4096 // bytes
 #define FILENAMESIZE 110
 #define ENTRY_PER_BLOCK 32
@@ -25,7 +26,7 @@
 */
 
 
-#define SECTOR_SIZE 128
+
 //contains the pointers to all blocks occupied by the file.
 struct inode
 {
@@ -140,6 +141,27 @@ void set_fcb_block(int inodeNo){
 
 }
 
+// 1 means there is available location
+// -1 means there are no available location
+int check_enough_blocks_available_bitmap(int requiredBlock){
+    int counter = 0;
+    struct bitmap_block  * bitmap_block_ptr =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+    for (int i = 0; i < 4; i++)
+    {
+        read_block(bitmap_block_ptr,i+1);
+        for(int j = 0;j < 4096;j++){
+            if(bitmap_read(i) == 0){
+                counter++;
+            }
+        }
+    }
+    if(counter >= requiredBlock){
+        return 1;
+    }else{
+        return -1;
+    }
+}
+
 // (Number of bits per word) * (number of 0 values words)+  offset of first 1 in the non zero word.
 void bitmap_block_init(){
     struct bitmap_block  * bitmap =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
@@ -211,15 +233,15 @@ int bitmap_block_clear(int index){
         bitmap_block->bitmap[word] &=  ~(1 << position); 
         write_block(bitmap_block,(4096 * 8));
 }
-// index is the inodeNo
 
+// index is the inodeNo
 int bitmap_read(int index){
     struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
      //Decide which block is the bitmap going to read.
         read_block(bitmap_block,(index / (4096 * 8))+1);
         int word = index >> SHIFT;
         int position = index & MASK;
-       return (bitmap_block->bitmap[word]>> position) &1; 
+       return (bitmap_block->bitmap[word]>> position) & 1; 
 }
 
 
@@ -351,23 +373,23 @@ int sfs_umount ()
 
 
 // Done 
-// RECHECK AGAIN
 int sfs_create(char *filename)
 {
     //Target location in directoryEntry
-    int targetlocation = emptyDirectoryFounder();
+    int targetlocation = empty_Directory_location_founder();
     if(targetlocation == -1){return -1;}
     
     struct directoryblock * directoryBlock_ptr;
 
     directoryBlock_ptr = (struct directoryblock *) malloc (sizeof(struct directoryblock));
     
+    //To check is the file already in the directory entry
     for (int i = 0; i < ROOT_BLOCK_NUMBER; i++)
     {
         read_block(directoryBlock_ptr,i+5);
         for (int j = 0; i < 32; j++)
         {
-            // Checks the status of the fcb according to the data stored in the superblock.
+            
         if((strcmp(filename, directoryBlock_ptr->entryList[j].fileName) == 0))
             {
                 printf("File already exist.");
@@ -375,23 +397,28 @@ int sfs_create(char *filename)
             }
     }
     }
-    set_fcb_block(targetlocation);
+    
+    
+
     struct directoryEntry * directoryEntry_ptr;
     directoryEntry_ptr = (struct directoryEntry *) malloc (sizeof(struct directoryEntry));
     directoryEntry_ptr->size = 0;
     strcpy(directoryEntry_ptr->fileName,filename);
-    directory_entry_add(targetlocation,directoryBlock_ptr);
 
+    // Update the directory entry and fcb block
+    directory_entry_add(targetlocation,directoryBlock_ptr);
+    set_fcb_block(targetlocation);
     return (0);
 }
 
 
-// DONE
+
 int sfs_open(char *file, int mode)
 {
     struct directoryEntry* tmp;
     tmp = (struct directoryEntry *)malloc(sizeof(struct directoryEntry));
-    int entryLocation =  directory_entry_finder(file,tmp) ;
+    
+    int entryLocation =  directory_entry_location_finder_byName(file,tmp) ;
     if(entryLocation == -1){ printf("Directory entry finder could not find the entry ! \n");return -1;}
     int locationHolder = -1 ;
     for (int i = 0; i < MAX_FILE_SIZE; i++)
@@ -402,7 +429,9 @@ int sfs_open(char *file, int mode)
         }
     }
     if(locationHolder == -1){return -1;} 
+
     strcpy(open_FileTable[locationHolder].fileName,tmp->fileName);
+
     open_FileTable[locationHolder].iNodeNo = tmp->iNodeNo;
     open_FileTable[locationHolder].size = tmp->size;
     modes[locationHolder] = mode;
@@ -412,22 +441,21 @@ int sfs_open(char *file, int mode)
 }
 
 
-// DONE
+
 int sfs_close(int fd){
-    if(fd >= 0){
+    if(fd < 0 || fd >= 16){
         available_location_openFileTable[fd] = 0;
         return (0); 
     }else
         return -1;
 }
 
-// DONE
+
 int sfs_getsize (int  fd)
 {
-    open_FileTable[fd].size;
-    return (0); 
+    return open_FileTable[fd].size;
+    
 }
-
 
 
 
@@ -436,7 +464,7 @@ int sfs_read(int fd, void *buf, int n){
 
     if(fd > MAX_FILE_SIZE || modes[fd] == 0)
         return -1;
-    if(open_FileTable[fd].size < (last_position[fd]+n) )
+    if(open_FileTable[fd].size < (last_position[fd]+n) == 0 )
         return -1;
 
     //GET Block From Position
@@ -450,7 +478,7 @@ int sfs_read(int fd, void *buf, int n){
     int current_block = open_FileTable[fd].iNodeNo;
 
     struct index_block * tmp;
-        tmp = (struct index_block *)malloc (sizeof(struct index_block *));
+    tmp = (struct index_block *)malloc (sizeof(struct index_block *));
 
 
     for(int i = 0; i < b_position / BLOCKSIZE; i++){
@@ -515,10 +543,38 @@ int get_index_block_entry(int n, struct index_block *input) {
         input->block_numbers[i] = tmp->block_numbers[i];
     }
 }
+
 // Allocate the index data num when needed.
+// Done
 int sfs_append(int fd, void *buf, int n)
 {
-    return (0); 
+
+    if(fd >= 128 || modes[fd] != MODE_APPEND) {return -1;}
+
+
+    int current_block_no = open_FileTable[fd].size /BLOCKSIZE;
+
+    if((open_FileTable[fd].size +% BLOCKSIZE) > 0){
+        current_block_no ++; 
+    }
+
+    int new_block_no = (open_FileTable[fd].size +n) /BLOCKSIZE;
+
+    if(((open_FileTable[fd].size +n)% BLOCKSIZE) > 0){
+        new_block_no ++; 
+    }
+    int required_block_count = new_block_no - current_block_no;
+
+    // Check the empty space for the append
+    if(check_enough_blocks_available_bitmap(required_block_count) == -1){
+        return -1;
+    }
+    write_block(open_FileTable[fd],buf,n,required_block_count);
+    open_FileTable[fd].size += n;
+
+    directory_entry_add(entry_position[fd],open_FileTable[fd]);
+
+    return (n); 
 }
 
 int sfs_delete(char *filename)
@@ -671,13 +727,13 @@ int directory_entry_location_finder_byName(char * name, struct directoryEntry * 
 
 //Checks the free directory entry position according to the superblock
 //-1 means no empty location
-int empty_Directory_location_Founder(){
+int empty_Directory_location_founder(){
     struct directoryblock * dir_block;
     dir_block = (struct directoryblock *) malloc(sizeof(struct directoryblock));
     for (int i = 0; i < 4; i++)
     {
         read_block(dir_block,i+5);
-        for(int j = 0;j<32;j++){
+        for(int j = 0;j < 32; j++){
             if(dir_block->entryList[j].usedStatus == 0){
                 return (i*32)+j;
             }
