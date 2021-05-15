@@ -32,7 +32,7 @@ struct inode
 {
     int inodeNo;
     int indexNodeNo;
-    int first_block;
+ //   int first_block;
     int usedStatus;
     char filler [128 - (3 * sizeof(int)) - sizeof(struct index_node *)];
 };
@@ -113,6 +113,7 @@ int get_empty_inodeNo_in_fcb(){
     
 }
 
+int add_inodeTo_fcb(){}
 // if -1 means fcb could not founded
 int get_indexTable_locaiton_of_specific_file(int inodeNo){
      struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
@@ -143,7 +144,8 @@ void set_fcb_block(int inodeNo){
 
 }
 
-struct inode * get_inode_block(int inodeNo,struct inode * output_ptr){
+// According to the inodeNo
+void get_inode_node(int inodeNo,struct inode * output_ptr){
     struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
      int block_location = (inodeNo / 32)+9;
      int offset = inodeNo % 32;
@@ -421,13 +423,13 @@ int sfs_create(char *filename)
                 return -1;
             }
     }
-    }
-    
-    
+    }   
 
     struct directoryEntry * directoryEntry_ptr;
     directoryEntry_ptr = (struct directoryEntry *) malloc (sizeof(struct directoryEntry));
-    directoryEntry_ptr->size = 0;
+    //inode no of the file initalized.
+    directoryEntry_ptr->iNodeNo = targetlocation;
+    directoryEntry_ptr->size = sizeof(filename);
     strcpy(directoryEntry_ptr->fileName,filename);
 
     // Update the directory entry and fcb block
@@ -444,6 +446,7 @@ int sfs_open(char *file, int mode)
     tmp = (struct directoryEntry *)malloc(sizeof(struct directoryEntry));
     
     int entryLocation =  directory_entry_location_finder_byName(file,tmp) ;
+
     if(entryLocation == -1){ printf("Directory entry finder could not find the entry ! \n");return -1;}
     int locationHolder = -1 ;
     for (int i = 0; i < MAX_FILE_SIZE; i++)
@@ -571,16 +574,13 @@ int get_index_block_entry(int n, struct index_block *input) {
 }
 
 // Allocate the index data num when needed.
-// Done
+ 
 int sfs_append(int fd, void *buf, int n)
 {
-/*
-   
-    
-    */
+
   if(fd >= 128 || modes[fd] != MODE_APPEND) {return -1;}
 
-
+/*
     int current_block_no = open_FileTable[fd].size /BLOCKSIZE;
 
     if((open_FileTable[fd].size % BLOCKSIZE) > 0){
@@ -593,31 +593,33 @@ int sfs_append(int fd, void *buf, int n)
         new_block_no ++; 
     }
     int required_block_count = new_block_no - current_block_no;
-    // Check the empty space for the append
-    if(check_enough_blocks_available_bitmap(required_block_count) == -1){
-        return -1;
-    }
+    
+    */
 
      //write buffer;
-    struct inode * new_inode;
-    new_inode = (struct inode *) malloc ( sizeof ( struct inode ) );
+    //open_FileTable[fd] appendlenicek entrynode
 
-    int free_inode = get_empty_inodeNo_in_fcb();
     
     
-    // Directory Entry      open_FileTable[fd];
- 
+    struct inode * node;
+    node = (struct inode *) malloc ( sizeof ( struct inode ) );
+
+    struct index_block * new_index_block;
+    new_index_block = (struct index_block *) malloc ( sizeof ( struct index_block ) );
+
+    //Free fcb node no (fcbid)
+    int free_inode;
+    if(free_inode == -1) {return -1;}
+  
+    get_inode_node(open_FileTable[fd].iNodeNo,free_inode);
+    
+    int inodeNo;
     int indexNodeNo;
-    int first_block;
+ //   int first_block;
     int usedStatus;
-    get_inode_block(free_inode,new_inode);
-    
-    new_inodock_no++;
+    int indexBlockLocation = MAX_FILE_SIZE + node->inodeNo;
 
-
-
-
-
+    node->indexNodeNo = indexBlockLocation +node->inodeNo; 
 
 
 
@@ -761,6 +763,7 @@ void directory_entry_block_init(){
     {
         // Since the root directories are from 5 to 9 (not included.)
         write_block(current_entry_block,i+5);
+        bitmap_block_set(i+5);
     }
     free(current_entry_block);   
     
@@ -783,7 +786,7 @@ int directory_entry_add(int directory_enrty_no, struct directoryEntry * ent){
     strcpy(dir_block->entryList[ofset].fileName, ent->fileName);
     dir_block->entryList[ofset].iNodeNo = ent->iNodeNo;
     dir_block->entryList[ofset].usedStatus = 1;
-    dir_block->entryList[ofset].size = ent->size;
+  //  dir_block->entryList[ofset].size = ent->size;
     
     // real part 
     if(write_block(dir_block,directoryBlockNumber+1) != 1){
@@ -805,7 +808,7 @@ int directory_entry_location_finder_byName(char * name, struct directoryEntry * 
             if((strcmp(name,dir_block->entryList[j].fileName) == 0)){
                     ent->iNodeNo = dir_block->entryList[j].iNodeNo;
                     strcpy(ent->fileName,dir_block->entryList[j].fileName); 
-                    ent->size = dir_block->entryList[j].size;
+   //                 ent->size = dir_block->entryList[j].size;
             // Block size / sizeof(struct directory entry) = 32
                     return (i*32)+j;
             }
