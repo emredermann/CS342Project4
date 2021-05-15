@@ -32,8 +32,9 @@ struct inode
 {
     int inodeNo;
     int indexNodeNo;
+    int first_block;
     int usedStatus;
-    char filler [128 - (2 * sizeof(int)) - sizeof(struct index_node *)];
+    char filler [128 - (3 * sizeof(int)) - sizeof(struct index_node *)];
 };
 
 struct directoryEntry
@@ -43,7 +44,7 @@ struct directoryEntry
     int iNodeNo;
     int size;
     int usedStatus;
-    char filler [128 - sizeof(int) - sizeof(char) * FILENAMESIZE];
+    char filler [128 - 2*sizeof(int) - sizeof(char) * FILENAMESIZE];
 };
 
 struct directoryblock
@@ -92,6 +93,7 @@ void fcb_block_init(){
     for (int i = 0; i < 4; i++)
     {
         write_block(fcb_block_ptr,i+9);
+        bitmap_block_set(i+9);
     }
 }
 // if -1 means no empty location founded
@@ -126,7 +128,7 @@ int get_indexTable_locaiton_of_specific_file(int inodeNo){
 
 // if -1 means fcb already allocated.
 void set_fcb_block(int inodeNo){
-    struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
+     struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
      int block_location = (inodeNo / 32)+9;
      int offset = inodeNo % 32;
 
@@ -136,9 +138,19 @@ void set_fcb_block(int inodeNo){
     }
     fcb_block_ptr->inodes[offset].usedStatus = 1;
     write_block(fcb_block_ptr,block_location);
-
+    bitmap_block_set(block_location);
     return 0;
 
+}
+
+struct inode * get_inode_block(int inodeNo,struct inode * output_ptr){
+    struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
+     int block_location = (inodeNo / 32)+9;
+     int offset = inodeNo % 32;
+     read_block(fcb_block_ptr,block_location);
+     output_ptr->inodeNo = fcb_block_ptr->inodes[offset].inodeNo;
+     output_ptr->indexNodeNo = fcb_block_ptr->inodes[offset].indexNodeNo;
+     output_ptr->usedStatus = fcb_block_ptr->inodes[offset].usedStatus;
 }
 
 // 1 means there is available location
@@ -244,7 +256,22 @@ int bitmap_read(int index){
        return (bitmap_block->bitmap[word]>> position) & 1; 
 }
 
+int get_free_block_in_Bitmap(){
+     struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+      //Decide which blocok is the bitmap going to read.
+      for (int i = 0; i < 4; i++)
+      {
+        read_block(bitmap_block,i+1);
+        for(int index = 0;index < (4096 * 8); index++){
+            int word = index >> SHIFT;
+            int position = index & MASK;
+            if( bitmap_read((i*4096*8) + index) == 0){
+                return (i*4096*8) + index;
+            } 
+    }
 
+   }     
+}
 //MODE_READ 0
 //MODE_APPEND 1
 int modes[MAX_FILE_SIZE];
@@ -343,10 +370,8 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     write_block(superBlock_ptr,0);
     //****************************************
     bitmap_block_init();
-    
-    for(int i = 0;i<5;i++){bitmap_block_set(i);}
-    
     directory_entry_block_init();
+    for(int i = 0;i<5;i++){bitmap_block_set(i);}
 
     sfs_umount();
     return (0); 
@@ -437,6 +462,7 @@ int sfs_open(char *file, int mode)
     modes[locationHolder] = mode;
     available_location_openFileTable[locationHolder] = 1;
     entry_position[locationHolder] = entryLocation;
+
     return locationHolder; 
 }
 
@@ -548,13 +574,16 @@ int get_index_block_entry(int n, struct index_block *input) {
 // Done
 int sfs_append(int fd, void *buf, int n)
 {
-
-    if(fd >= 128 || modes[fd] != MODE_APPEND) {return -1;}
+/*
+   
+    
+    */
+  if(fd >= 128 || modes[fd] != MODE_APPEND) {return -1;}
 
 
     int current_block_no = open_FileTable[fd].size /BLOCKSIZE;
 
-    if((open_FileTable[fd].size +% BLOCKSIZE) > 0){
+    if((open_FileTable[fd].size % BLOCKSIZE) > 0){
         current_block_no ++; 
     }
 
@@ -564,15 +593,37 @@ int sfs_append(int fd, void *buf, int n)
         new_block_no ++; 
     }
     int required_block_count = new_block_no - current_block_no;
-
     // Check the empty space for the append
     if(check_enough_blocks_available_bitmap(required_block_count) == -1){
         return -1;
     }
-    write_block(open_FileTable[fd],buf,n,required_block_count);
+
+     //write buffer;
+    struct inode * new_inode;
+    new_inode = (struct inode *) malloc ( sizeof ( struct inode ) );
+
+    int free_inode = get_empty_inodeNo_in_fcb();
+    
+    
+    // Directory Entry      open_FileTable[fd];
+ 
+    int indexNodeNo;
+    int first_block;
+    int usedStatus;
+    get_inode_block(free_inode,new_inode);
+    
+    new_inodock_no++;
+
+
+
+
+
+
+
+
     open_FileTable[fd].size += n;
 
-    directory_entry_add(entry_position[fd],open_FileTable[fd]);
+    directory_entry_add(entry_position[fd],open_FileTable+fd);
 
     return (n); 
 }
@@ -653,6 +704,45 @@ int set_bitmap_block(int location){
 
 */
 
+
+/*
+// Index block should be allocated in the n+1
+int write_blocks(struct directoryEntry * ent,void *buf,int size, int req_blocks){
+    if(size <=  0) return -1;
+
+    struct inode * inode_ptr;
+    inode_ptr = (struct inode *) malloc(sizeof(struct inode));
+
+    struct index_block * indexBlock_ptr;
+    indexBlock_ptr = (struct index_block *) malloc(sizeof(struct index_block));
+
+    get_inode_block(ent->iNodeNo,inode_ptr);
+
+    int first_block = inode_ptr->first_block;
+    int current_block;
+    if(ent->size %BLOCKSIZE == 0){
+        // Find an empty block
+        int empty_block_no = get_free_block_in_Bitmap();
+
+        if(ent->size == 0){
+            inode_ptr->first_block = empty_block_no;
+            current_block = empty_block_no;
+        }else{
+//find last block
+                int lastBlock = 
+        }
+
+
+    // if inode  not empty.
+    if (inode_ptr->usedStatus == 1)
+    {
+        int empty_block,
+    
+    }
+    }
+    get_empty_inodeNo_in_fcb();
+}
+*/
 //************************************************
 //Directory Entry methods
 
