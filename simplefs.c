@@ -144,6 +144,20 @@ void set_fcb_block(int inodeNo){
 
 }
 
+void update_fcb_block(int inodeNo,struct inode * output_ptr){
+ struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
+     int block_location = (inodeNo / 32)+9;
+     int offset = inodeNo % 32;
+
+    read_block(fcb_block_ptr,block_location);
+    fcb_block_ptr->inodes[offset].indexNodeNo = output_ptr->indexNodeNo;
+    fcb_block_ptr->inodes[offset].inodeNo = output_ptr->inodeNo;
+    fcb_block_ptr->inodes[offset].usedStatus = output_ptr->usedStatus;
+    
+    write_block(fcb_block_ptr,block_location);
+    bitmap_block_set(block_location);
+
+}
 // According to the inodeNo
 void get_inode_node(int inodeNo,struct inode * output_ptr){
     struct FCB_block  * fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
@@ -273,6 +287,7 @@ int get_free_block_in_Bitmap(){
     }
 
    }     
+   return -1;
 }
 //MODE_READ 0
 //MODE_APPEND 1
@@ -574,14 +589,13 @@ int get_index_block_entry(int n, struct index_block *input) {
 }
 
 // Allocate the index data num when needed.
- 
+ //Might throw error.
 int sfs_append(int fd, void *buf, int n)
 {
 
   if(fd >= 128 || modes[fd] != MODE_APPEND) {return -1;}
 
-/*
-    int current_block_no = open_FileTable[fd].size /BLOCKSIZE;
+    int current_block_no = open_FileTable[fd].size / BLOCKSIZE;
 
     if((open_FileTable[fd].size % BLOCKSIZE) > 0){
         current_block_no ++; 
@@ -593,13 +607,9 @@ int sfs_append(int fd, void *buf, int n)
         new_block_no ++; 
     }
     int required_block_count = new_block_no - current_block_no;
-    
-    */
 
      //write buffer;
     //open_FileTable[fd] appendlenicek entrynode
-
-    
     
     struct inode * node;
     node = (struct inode *) malloc ( sizeof ( struct inode ) );
@@ -617,23 +627,97 @@ int sfs_append(int fd, void *buf, int n)
     int indexNodeNo;
  //   int first_block;
     int usedStatus;
-    int indexBlockLocation = MAX_FILE_SIZE + node->inodeNo;
+    int indexBlockLocation = MAX_FILE_SIZE + (node->inodeNo);
 
-    node->indexNodeNo = indexBlockLocation +node->inodeNo; 
+    node->indexNodeNo = indexBlockLocation + (node->inodeNo); 
+    int offset = open_FileTable[fd].size % BLOCKSIZE;
 
+    char* data = (char*)malloc(BLOCKSIZE);
+    int counter =0;
+     int freeBlockLocation;
+    if(required_block_count == 0){
+        freeBlockLocation = get_free_block_in_Bitmap();
+        if(freeBlockLocation == -1){return -1;}
+        read_block(data,indexBlockLocation);
+        strncpy(data + offset,(char*)buf,n);
 
+        write_block(data,indexBlockLocation);
+        bitmap_block_set(indexBlockLocation);
+        new_index_block->block_numbers[counter] = freeBlockLocation;
+    }else{
 
+        int calc_size = open_FileTable[fd].size;
+        while(calc_size > BLOCKSIZE && counter < 1024){
+
+           freeBlockLocation = get_free_block_in_Bitmap();
+           if(freeBlockLocation == -1){return -1;}
+           read_block(data,indexBlockLocation);
+           // update data
+           strncpy(data,(char *)buf, BLOCKSIZE > calc_size ? calc_size : BLOCKSIZE);
+           
+           buf = (char *)buf+ BLOCKSIZE > calc_size ? calc_size : BLOCKSIZE;
+           calc_size -= BLOCKSIZE > calc_size ? calc_size : BLOCKSIZE;
+           write_block(data,freeBlockLocation);
+           bitmap_block_set(freeBlockLocation);
+           new_index_block->block_numbers[counter] = freeBlockLocation;
+           counter++;
+        }
+        if(calc_size > 0 && counter < 1024){
+            freeBlockLocation = get_free_block_in_Bitmap();
+            buf = (char *)buf+ BLOCKSIZE > calc_size ? calc_size : BLOCKSIZE;
+            write_block(data,freeBlockLocation);
+            bitmap_block_set(freeBlockLocation);
+        }
+    }
+    
     open_FileTable[fd].size += n;
-
     directory_entry_add(entry_position[fd],open_FileTable+fd);
-
     return (n); 
 }
 
 int sfs_delete(char *filename)
 {
+    for (int i = 0; i < 16; i++)
+    {
+        if(open_FileTable[i].usedStatus == 1 && strcmp(open_FileTable[i],filename) == 0)
+            return -1;
+        }
+    
+
+    struct directoryEntry * dir_entry;
+    dir_entry = (struct directoryEntry *) malloc ( sizeof ( struct directoryEntry ) );
+    struct inode * fcb_node;
+    
+    fcb_node = (struct inode *) malloc ( sizeof ( struct inode ) );
+    
+    struct index_block * index_block;
+    index_block = (struct index_block *) malloc ( sizeof ( struct index_block ) );
+    
+    int tmp = directory_entry_location_finder_byName(filename,dir_entry);
+    dir_entry->usedStatus = 0;
+    dir_entry->size = 0;
+    directory_entry_add(tmp,dir_entry);
+    //clear inode
+    get_inode_node(tmp,fcb_node);
+    read_block(fcb_node->indexNodeNo,index_block);
+    for (int i = 0; i < 1024; i++)
+    {
+        //clear index block
+        bitmap_block_clear(index_block->block_numbers[i] );
+        index_block->block_numbers[i] = 0;
+    }
+    write_block(fcb_node->indexNodeNo,index_block);
+    fcb_node->indexNodeNo = -1;
+    fcb_node->usedStatus = 0;
+    update_fcb_block(tmp,fcb_node);
+    // bitmap clear
+   
+
     return (0); 
 }
+
+
+
 
 // Add print disk method to check the status.
 
@@ -789,7 +873,7 @@ int directory_entry_add(int directory_enrty_no, struct directoryEntry * ent){
   //  dir_block->entryList[ofset].size = ent->size;
     
     // real part 
-    if(write_block(dir_block,directoryBlockNumber+1) != 1){
+    if(write_block(dir_block,directoryBlockNumber + 1) != 1){
         return -1;
     }
     return 1;
