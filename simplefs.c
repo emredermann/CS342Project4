@@ -504,6 +504,8 @@ int sfs_getsize (int  fd)
 
 
 //(lecture 37 - 40:00)
+// !!!!!!!!!!!!!!!!!!!!!!!!!!
+
 int sfs_read(int fd, void *buf, int n){
 
     if(fd > MAX_FILE_SIZE || modes[fd] == 0)
