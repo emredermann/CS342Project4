@@ -80,7 +80,7 @@ struct superBlock
     int freeFCB[MAX_FILE_SIZE];
     int totalNumberOfBlocks;
     int blockSize;
-    int current_available_block;
+    int current_fileSize;
 };
 
 
@@ -382,7 +382,7 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     {
         superBlock_ptr->freeFCB[i] = 0;
     }
-    superBlock_ptr->current_available_block = 13;
+    //superBlock_ptr->current_available_block = 13;
     superBlock_ptr->totalNumberOfBlocks = 12;
     write_block(superBlock_ptr,0);
     //****************************************
@@ -502,7 +502,9 @@ int sfs_getsize (int  fd)
 }
 
 
-
+void increase_lastPosition(int fd,int n){
+    last_position[fd] += n;
+}
 //(lecture 37 - 40:00)
 // !!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -515,28 +517,64 @@ int sfs_read(int fd, void *buf, int n){
 
     //GET Block From Position
     int starting_pos = last_position[fd];
-    int remained_blocks = (starting_pos +n -1) / BLOCKSIZE-starting_pos/BLOCKSIZE+1;    
+    
+    int remained_blocks = (starting_pos + n -1) / BLOCKSIZE - starting_pos/BLOCKSIZE+1;    
 
     //last_position[fd] (buf_position)
-    int b_position =0;
+    int buffer_position =0;
 //**********************************************************************************
     //open_FileTable[fd] fbc
-    int current_block = open_FileTable[fd].iNodeNo;
+    int current_block_inode = open_FileTable[fd].iNodeNo;
 
+    struct inode * target_inode;
+    target_inode = (struct inode *)malloc (sizeof(struct inode *));
+    get_inode_node(current_block_inode,target_inode);
+
+    // target_inode is the file is going to read.
+    
     struct index_block * tmp;
     tmp = (struct index_block *)malloc (sizeof(struct index_block *));
 
 
-    for(int i = 0; i < b_position / BLOCKSIZE; i++){
-        get_index_block_entry(current_block,tmp);
-        current_block = tmp->block_numbers;
-    }
-//***********************************************************************************?
+    read_block(target_inode->indexNodeNo,tmp);
 
+    char * data = (char *) malloc(BLOCKSIZE);
+    char * result_data = (char *) malloc(BLOCKSIZE);
+
+    int flag = 0;
+    for(int i = 0; i < remained_blocks && flag == 0; i++){
+
+        if(tmp->block_numbers[i] == -1){flag = 1;}
+        // For the last block
+        if(i == remained_blocks -1){
+
+            int last_offset = (starting_pos + n) % BLOCKSIZE;
+            if(last_offset == 0) {last_offset = BLOCKSIZE;}
+            for (int  i = last_position[fd] % BLOCKSIZE; i < last_offset; i++)
+            {
+                // Byte by byte reading
+                ((char *)buf)[buffer_position++] = data[i];
+            }
+            increase_lastPosition(fd,last_offset -last_position[fd]%BLOCKSIZE);
+            
+        }// Not in the last block
+        else{
+            for (int  i = last_position[fd] % BLOCKSIZE; i < BLOCKSIZE; i++)
+            {
+                // Byte by byte reading
+                ((char *)buf)[buffer_position++] = data[i];
+            }
+            increase_lastPosition(fd,BLOCKSIZE -last_position[fd]%BLOCKSIZE);
+            read_block(data,tmp->block_numbers[i]);
+        }
+    }
+    return n;
+//***********************************************************************************?
+/*
     int current_offset;
     char* data = malloc(BLOCKSIZE);
 
-    read_block(data,current_block);
+    read_block(data,current_block_inode);
     for (int i = 0; i < remained_blocks; i++)
     {
         // For the last block
@@ -566,14 +604,14 @@ int sfs_read(int fd, void *buf, int n){
 //*******************************************************************************!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!*************
            // Read the next indexed block number 
            //current_block = ;
-            read_block(data,current_block);
+            read_block(data,current_block_inode);
 //****************************************************************************************!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!***********
     }
     //number of bytes readed succesfully.
     return n;
 }
 }
-
+*/
 int get_index_block_entry(int n, struct index_block *input) {
 
     int index_block_num = n / (BLOCKSIZE/sizeof(struct index_block *));
@@ -679,11 +717,14 @@ int sfs_append(int fd, void *buf, int n)
 
 int sfs_delete(char *filename)
 {
+    // Checks in the openfile table for the filename directory
     for (int i = 0; i < 16; i++)
     {
         if(open_FileTable[i].usedStatus == 1 && strcmp(open_FileTable[i],filename) == 0)
-            return -1;
-        }
+            {
+                return -1;
+            }
+    }
     
 
     struct directoryEntry * dir_entry;
@@ -719,10 +760,7 @@ int sfs_delete(char *filename)
 }
 
 
-
-
 // Add print disk method to check the status.
-
 
 /*
 void bitmap_block_init(){
