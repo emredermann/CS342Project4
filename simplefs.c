@@ -35,7 +35,7 @@ struct inode
     int usedStatus;
     char filler [128 - (5 * sizeof(int))];
 };
-
+typedef struct inode inode;
 struct directoryEntry
 {
     char fileName[FILENAMESIZE];
@@ -45,11 +45,12 @@ struct directoryEntry
     
     char filler [128 - 2*sizeof(int) - sizeof(char) * FILENAMESIZE];
 };
-
+typedef struct directoryEntry directoryEntry;
 struct directoryblock
 {
     struct directoryEntry entryList[ENTRY_PER_BLOCK];
 };
+typedef struct directoryblock directoryblock;
 //The size of the directory Entry declared as 128 in the assingment.
 // Contains the address of the index block(inode)
 
@@ -60,56 +61,68 @@ struct index_block{
    unsigned int block_numbers [1024];
 };
 
+typedef struct index_block index_block;
+
 struct bitmap_block{
     //Check the size calculation (Lecture 38 --> 09:00)
    unsigned char bitmap[4096];
     
 };
 
+typedef struct bitmap_block bitmap_block;
 struct FCB_block{
     struct inode inodes[32];
 };
 
+typedef struct FCB_block FCB_block;
 struct superBlock
 {
     int totalNumberOfBlocks;
 };
+typedef struct superBlock superBlock;
 
-void fcb_block_init(){
-    struct FCB_block  * fcb_block_ptr;
-    fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
-  
+union Block{
+    superBlock superBlock;
+    directoryblock directoryblock;
+    bitmap_block bitmap_block;
+    FCB_block FCB_block;
+    index_block index_block;
+    unsigned char data[BLOCKSIZE];
+};
+typedef union Block Block;
+
+void fcb_block_init(Block * block){
+ 
      for (int i = 0; i < 4; i++)
     {
         for (int j = 0; j < 32; j++)
         {
-            fcb_block_ptr->inodes[j].usedStatus = 0;
-            fcb_block_ptr->inodes[j].indexNodeNo = -1;
-            fcb_block_ptr->inodes[j].inodeNo = (i*32)+j;
-            fcb_block_ptr->inodes[j].location_pointer = 0;
-            fcb_block_ptr->inodes[j].mode = 0;
+            block->FCB_block.inodes[j].usedStatus = 0;
+            block->FCB_block.inodes[j].indexNodeNo = -1;
+            block->FCB_block.inodes[j].inodeNo = (i*32)+j;
+            block->FCB_block.inodes[j].location_pointer = 0;
+            block->FCB_block.inodes[j].mode = 0;
         
         }
-        write_block(fcb_block_ptr,i+9);
+        write_block(block,i+9);
     }
 }
 
-int get_empty_inodeNo_in_fcb(){
-    struct FCB_block  * fcb_block_ptr;
-     fcb_block_ptr = (struct FCB_block *)malloc(sizeof(struct FCB_block));
+int get_empty_inodeNo_in_fcb(Block *block){
+     
      for (int i = 0; i < 4; i++)
     {
-        read_block(fcb_block_ptr,i+9);
+        read_block(block,i+9);
         for (int j = 0; j < 32; j++)
         {
-            if((fcb_block_ptr->inodes[j].usedStatus) == 0){
+            if((block->FCB_block.inodes[j].usedStatus) == 0){
 
-                fcb_block_ptr->inodes[j].usedStatus = 1;
-                 write_block(fcb_block_ptr,i+9);
+                block->FCB_block.inodes[j].usedStatus = 1;
+                 write_block(block,i+9);
                 return (j * 32)+i;
             }
         }
-        write_block(fcb_block_ptr,i+9);
+        write_block(block,i+9);
     }
     return -1;
 }
@@ -117,164 +130,125 @@ int get_empty_inodeNo_in_fcb(){
 
 // if -1 means fcb already allocated.
 void set_fcb_block(int inodeNo,int indexNode, int locationPointer, int mode, int usedStatus){
-     struct FCB_block  * fcb_block_ptr;
-     fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
+     Block * block;
      int block_location = (inodeNo / 32)+9;
      int offset = inodeNo % 32;
 
-    read_block(fcb_block_ptr,block_location);
-   if(fcb_block_ptr->inodes[offset].usedStatus == 1){
+    read_block(block,block_location);
+   if(block->FCB_block.inodes[offset].usedStatus == 1){
         return -1;
     }
-    fcb_block_ptr->inodes[offset].usedStatus = 1;
-    fcb_block_ptr->inodes[offset].indexNodeNo = indexNode;
-    fcb_block_ptr->inodes[offset].inodeNo = inodeNo;
-    fcb_block_ptr->inodes[offset].location_pointer = 0;
+    block->FCB_block.inodes[offset].usedStatus = 1;
+    block->FCB_block.inodes[offset].indexNodeNo = indexNode;
+    block->FCB_block.inodes[offset].inodeNo = inodeNo;
+    block->FCB_block.inodes[offset].location_pointer = 0;
 
-    write_block(fcb_block_ptr,block_location);
+    write_block(block,block_location);
     return 0;
 }
 
-
-void add_fcb(int inodeNo,struct inode * output_ptr){
- struct FCB_block  * fcb_block_ptr;
- fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
-    
+/*
+void add_fcb(Block  * tmp,int inodeNo,Block * output_ptr){
+     
      int block_location = (inodeNo / 32)+9;
      int offset = inodeNo % 32;
 
-    read_block(fcb_block_ptr,block_location);
-    fcb_block_ptr->inodes[offset].indexNodeNo = output_ptr->indexNodeNo;
-    fcb_block_ptr->inodes[offset].inodeNo = output_ptr->inodeNo;
-    fcb_block_ptr->inodes[offset].usedStatus = output_ptr->usedStatus;
-    fcb_block_ptr->inodes[offset].mode = output_ptr->mode;
-    fcb_block_ptr->inodes[offset].location_pointer = output_ptr->location_pointer;
+    read_block(tmp,block_location);
+    tmp->FCB_block.inodes[offset].indexNodeNo = output_ptr.->indexNodeNo;
+    tmp->FCB_block.inodes[offset].inodeNo = output_ptr->inodeNo;
+    tmp->FCB_block.inodes[offset].usedStatus = output_ptr->usedStatus;
+    tmp->FCB_block.inodes[offset].mode = output_ptr->mode;
+    tmp->FCB_block.inodes[offset].location_pointer = output_ptr->location_pointer;
 
     write_block(fcb_block_ptr,block_location);
 }
-
+*/
 // According to the inodeNo
 
-void get_inode_node(int inodeNo,struct inode * output_ptr){
-    struct FCB_block  * fcb_block_ptr;
-    fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
+void get_inode_Block(Block * tmp, int inodeNo,Block * output_ptr){
+   
      int block_location = (inodeNo / 32)+9;
      int offset = inodeNo % 32;
-     read_block(fcb_block_ptr,block_location);
-     output_ptr->inodeNo = fcb_block_ptr->inodes[offset].inodeNo;
-     output_ptr->indexNodeNo = fcb_block_ptr->inodes[offset].indexNodeNo;
-     output_ptr->usedStatus = fcb_block_ptr->inodes[offset].usedStatus;
-     output_ptr->mode = fcb_block_ptr->inodes[offset].mode;
-     output_ptr->location_pointer = fcb_block_ptr->inodes[offset].location_pointer;
+     read_block(tmp,block_location);
+     output_ptr->FCB_block.inodes[offset].inodeNo = tmp->FCB_block.inodes[offset].inodeNo;
+     output_ptr->FCB_block.inodes[offset].indexNodeNo = tmp->FCB_block.inodes[offset].indexNodeNo;
+     output_ptr->FCB_block.inodes[offset].usedStatus = tmp->FCB_block.inodes[offset].usedStatus;
+     output_ptr->FCB_block.inodes[offset].mode = tmp->FCB_block.inodes[offset].mode;
+     output_ptr->FCB_block.inodes[offset].location_pointer = tmp->FCB_block.inodes[offset].location_pointer;
 }
 
-int  get_inode_node_status(int inodeNo){
-     struct FCB_block  * fcb_block_ptr;
-    fcb_block_ptr =(struct FCB_block *)malloc(sizeof(struct FCB_block));
+int  get_inode_node_status(Block * tmp,int inodeNo){
+    
     int block_location = (inodeNo / 32)+9;
     int offset = inodeNo % 32;
-    read_block(fcb_block_ptr,block_location);
-    return fcb_block_ptr->inodes[offset].usedStatus;
+    read_block(tmp,block_location);
+    return tmp->FCB_block.inodes[offset].usedStatus;
 }
 // 1 means there is available location
 // -1 means there are no available location
-int check_enough_blocks_available_bitmap(int requiredBlock){
-    int counter = 0;
-    struct bitmap_block  * bitmap_block_ptr =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
-    for (int i = 0; i < 4; i++)
-    {
-        read_block(bitmap_block_ptr,i+1);
-        for(int j = 0;j < 4096;j++){
-            if(bitmap_read(i) == 0){
-                counter++;
-            }
-        }
-    }
-    if(counter >= requiredBlock){
-        return 1;
-    }else{
-        return -1;
-    }
-}
+
 
 // (Number of bits per word) * (number of 0 values words)+  offset of first 1 in the non zero word.
-void bitmap_block_init(){
-    struct bitmap_block  * bitmap;
-    bitmap =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
-    bitmap->bitmap[4096];
+void bitmap_block_init(Block * tmp){
+     
+    tmp->bitmap_block.bitmap[4096];
     for (int i = 0; i < 4096; i++)
     {
-        bitmap->bitmap[i] = '0';
+        tmp->bitmap_block.bitmap[i] = '0';
     }
     
     for (int i = 0; i < ROOT_BLOCK_NUMBER; i++)
     {
         // Since the bitmap are from 1 to 5 (not included.)
-        write_block(bitmap,i+1);
+        write_block(tmp,i+1);
     }
 }
 
-void print_bitmap(){
-    struct bitmap_block  * bitmap =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
-    for (int  i = 0; i < 4; i++)
-    {
-         read_block(bitmap,i+1);
-         for (int j = 0; j < 4096; j++)
-         {
-             printf("{s} ",bitmap->bitmap[j]);
-         }
-         printf("\n");                 
-    }
-    
-}
 
 // index is the inodeNo
-int bitmap_block_set(int index){
-
-    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block)); 
+int bitmap_block_set(Block * tmp,int index){
      //Decide which block is the bitmap going to read.
-        read_block(bitmap_block,(index / (4096 * 8))+1);
+        read_block(tmp,(index / (4096 * 8))+1);
         int word = index >> SHIFT;
         int position =index & MASK;
-        bitmap_block->bitmap[word] |= 1 << position;  
+        tmp->bitmap_block.bitmap[word] |= 1 << position;  
    
-        write_block(bitmap_block,(index / (4096 * 8))+1);
+        write_block(tmp,(index / (4096 * 8))+1);
 }
 
-// index is the inodeNo
-int bitmap_block_clear(int index){
 
-    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+// index is the inodeNo
+int bitmap_block_clear(Block * tmp,int index){
+
       //Decide which block is the bitmap going to read.
-        
-        read_block(bitmap_block,(index /(4096 * 8))+1);
+        read_block(tmp,(index /(4096 * 8))+1);
         int word = index >> SHIFT;
         int position = index & MASK;
-        bitmap_block->bitmap[word] &=  ~(1 << position); 
-        write_block(bitmap_block,(4096 * 8)+1);
+        tmp->bitmap_block.bitmap[word] &=  ~(1 << position); 
+        write_block(tmp,(4096 * 8)+1);
 }
 
 // index is the inodeNo
-int bitmap_read(int index){
-    struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
+int bitmap_read(Block * tmp,int index){
+     
      //Decide which block is the bitmap going to read.
-        read_block(bitmap_block,(index / (4096 * 8))+1);
+        read_block(tmp,(index / (4096 * 8))+1);
         int word = index >> SHIFT;
         int position = index & MASK;
-       return (bitmap_block->bitmap[word]>> position) & 1; 
+       return (tmp->bitmap_block.bitmap[word]>> position) & 1; 
 }
 
-
-int get_free_block_in_Bitmap(){
-     struct bitmap_block  * bitmap_block =(struct bitmap_block *)malloc(sizeof(struct bitmap_block));
-      //Decide which blocok is the bitmap going to read.
+/*
+int get_free_block_in_Bitmap(Block * tmp){
+   
       for (int i = 0; i < 4; i++)
       {
-        read_block(bitmap_block,i+1);
+        read_block(tmp,i+1);
+
         for(int index = 0;index < (4096 * 8); index++){
             int word = index >> SHIFT;
             int position = index & MASK;
-            if( bitmap_read((i*4096*8) + index) == 0){
+            if( bitmap_read(,(i*4096*8) + index) == 0){
                 bitmap_block_set((i*4096*8) + index);
                 return (i*4096*8) + index;
             } 
@@ -283,7 +257,7 @@ int get_free_block_in_Bitmap(){
    }     
    return -1;
 }
-
+*/
 
 //MODE_READ 0
 //MODE_APPEND 1
@@ -358,19 +332,19 @@ int create_format_vdisk (char *vdiskname, unsigned int m)
     sfs_mount(vdiskname);
 
     // Super block init***************************************
-    struct superBlock * superBlock_ptr;
-    superBlock_ptr = (struct superBlock *) malloc(sizeof(struct superBlock));
+    Block block;
+
     
-    superBlock_ptr->totalNumberOfBlocks = count;
+    block.superBlock.totalNumberOfBlocks = count;
     
-    write_block(superBlock_ptr,0);
+    write_block(&block,0);
    
     //****************************************
-    fcb_block_init();
+    fcb_block_init(&block);
 
     directory_block_init();
-    bitmap_block_init();
-    for(int i = 0;i<13;i++){bitmap_block_set(i);}
+    bitmap_block_init(&block);
+    for(int i = 0;i<13;i++){bitmap_block_set(&block,i);}
     
     sfs_umount();
     return 0; 
@@ -396,65 +370,8 @@ int sfs_umount ()
 
 int sfs_create(char *filename)
 {
-  
-    int targetlocation = get_empty_inodeNo_in_fcb;
-    printf("target Location is{%d}",targetlocation);
-    if(targetlocation == -1){return -1;}
-    printf("inside create");
-    struct inode * inode_ptr;
-    inode_ptr = (struct inode *) malloc (sizeof(struct inode));
-    //**********************************************************************
-    struct directoryblock * directoryBlock_ptr;
-    directoryBlock_ptr = (struct directoryblock *) malloc (sizeof(struct directoryblock));
-
-    //To check is the file already in the directory entry
-    for (int i = 0; i < ROOT_BLOCK_NUMBER; i++)
-    {
-        if(read_block(directoryBlock_ptr,i+5)==-1);
-        for (int j = 0; i < 32; j++)
-        {
-            get_inode_node(i*32+j,inode_ptr);
-        if( inode_ptr->usedStatus == 1 && (strcmp(filename, directoryBlock_ptr->entryList[j].fileName) == 0))
-            {
-                printf("File already exist.");
-                return -1;
-            }
-        }
-    }   
-    //**********************************************************************
-    //Target location in directoryEntry
-    struct directoryEntry * directoryEntry_ptr;
-    directoryEntry_ptr = (struct directoryEntry *) malloc (sizeof(struct directoryEntry));
-    //inode no of the file initalized.
-    directoryEntry_ptr->iNodeNo = -1;
-    directoryEntry_ptr->size = 0;
-   
-    strcpy(directoryEntry_ptr->fileName,filename);
-
-    // Update the directory entry and fcb block
-    //directory_entry_add(targetlocation,directoryBlock_ptr);
-    int inode_no = get_empty_inodeNo_in_fcb();
-
-    int directoryBlockNumber = inode_no / 32; 
-    int offset = (inode_no % 32);
-    
-    struct directoryblock * dir_block;
-    dir_block = (struct directoryblock *) malloc(sizeof(struct directoryblock));
-
-    if(read_block(dir_block,directoryBlockNumber + 1) != 1){
-        return -1;
-    }
-
-    strcpy(dir_block->entryList[offset].fileName, directoryEntry_ptr->fileName);
-    dir_block->entryList[offset].iNodeNo = directoryEntry_ptr->iNodeNo;
-   
-  //  dir_block->entryList[ofset].size = ent->size;
-    
-    // real part 
-    if(write_block(dir_block,directoryBlockNumber + 1) != 1){
-        return -1;
-    }
-    return 1;
+    Block tmp;
+    super
 }
 
 
@@ -731,10 +648,10 @@ void directory_block_init(){
     {
         // Since the root directories are from 5 to 9 (not included.)
         if(write_block(current_entry_block,i+5) == 1){
-        printf("Writeblock initialized");}
+            printf("Writeblock initialized");
+        }
     }
 }
-
 
 // created directory entry added to the specific position.
 int directory_entry_add(int directory_enrty_no, struct directoryEntry * ent){
