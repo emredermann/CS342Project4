@@ -676,7 +676,7 @@ index_block->block_numbers[i] = 0;
 write_block(fcb_node->indexNodeNo,index_block);
 fcb_node->indexNodeNo = -1;
 fcb_node->usedStatus = 0;
-update_fcb_block(tmp,fcb_node);
+add_fcb_block(tmp,fcb_node);
 // bitmap clear
 
 return (0); 
